@@ -8,10 +8,10 @@ from bs4 import BeautifulSoup
 import datetime
 import time
 import re
-import altair as alt # 新增繪圖庫
+import altair as alt
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 副官 v1.6j - 台股視覺優化版", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 副官 v1.6k - 彈窗戰略版", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -42,7 +42,49 @@ def smart_get_data(ticker_input):
     if not df.empty: return try_two, df
     return ticker_input, pd.DataFrame()
 
-# --- 3. 自動化偵蒐引擎 ---
+# --- 3. 彈出視窗功能 (Dialog) ---
+@st.dialog("📋 指揮官戰略手諭")
+def show_strategy_modal(score):
+    st.caption(f"當前宏觀評分: {score} / 100")
+    
+    if score >= 80:
+        st.success("🌟 結論：極度利多 (Aggressive)")
+        st.markdown("""
+        ### 🚀 行動準則
+        * **資金水位**：`80% - 100%` (可適度開槓桿)
+        * **操作心法**：**「順風滿帆，敢於追價」**。目前外資與基本面同步共振，回檔即是買點。不要因為漲多而預設高點。
+        * **選股策略**：鎖定高 Beta 的科技權值股或強勢族群龍頭，強者恆強。
+        """)
+    elif score >= 60:
+        st.info("✅ 結論：穩健多頭 (Standard)")
+        st.markdown("""
+        ### 🛡️ 行動準則
+        * **資金水位**：`50% - 70%`
+        * **操作心法**：**「買黑不買紅」**。大趨勢向上但盤勢有雜訊，嚴守雙週期共振訊號才出手。
+        * **選股策略**：基本面優良的業績成長股，避開投機小型股。
+        """)
+    elif score >= 40:
+        st.warning("⚠️ 結論：震盪觀望 (Defensive)")
+        st.markdown("""
+        ### 🚧 行動準則
+        * **資金水位**：`30% 以下`
+        * **操作心法**：**「打帶跑戰術」**。只做最有把握的突破，有獲利快跑，嚴格執行停損。
+        * **選股策略**：防禦型類股 (電信、高殖利率) 或現金停泊。
+        """)
+    else:
+        st.error("🛑 結論：極端風險 (Cash is King)")
+        st.markdown("""
+        ### ⛔ 行動準則
+        * **資金水位**：`0%` (完全空手)
+        * **操作心法**：**「覆巢之下無完卵」**。不要嘗試抄底，耐心等待落底訊號（如 VIX 爆衝後回落）。
+        * **選股策略**：無。保留子彈是唯一任務。
+        """)
+    
+    st.markdown("---")
+    if st.button("🫡 收到，關閉視窗"):
+        st.rerun()
+
+# --- 4. 自動化偵蒐引擎 ---
 def fetch_auto_macro(fred_key):
     results = {}
     headers = {
@@ -97,7 +139,7 @@ def fetch_auto_macro(fred_key):
     
     return results
 
-# --- 4. 戰術分析邏輯 ---
+# --- 5. 戰術分析邏輯 ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
     try:
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
@@ -118,26 +160,25 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 
         if macro_score < 40: 
             signal = "STAY AWAY | 禁止進場"
-            color = "#FF4B4B" # Red
+            color = "#FF4B4B" 
             msg = "宏觀環境險惡，現金為王。"
         elif weekly_hist > 0 and k_val < 30 and golden_cross: 
             signal = "FIRE | 全力進攻 (狙擊)"
-            color = "#09AB3B" # Green
+            color = "#09AB3B" 
             msg = "雙週期共振確認，請參考「狙擊區間」佈局。"
         elif weekly_hist > 0 and k_val < 35: 
             signal = "PREPARE | 準備射擊"
-            color = "#FFA500" # Orange
+            color = "#FFA500" 
             msg = "價格進入甜蜜區，等待金叉訊號。"
         elif k_val > 80: 
             signal = "TAKE PROFIT | 分批止盈"
-            color = "#1E90FF" # Blue
+            color = "#1E90FF" 
             msg = "短線過熱，建議在 TP1 附近減碼。"
         else: 
             signal = "WAIT | 觀望續抱"
-            color = "#808080" # Gray
+            color = "#808080" 
             msg = "趨勢延續中，持股者續抱。"
         
-        # 準備畫圖用的 DataFrame
         plot_df = df['Close'].reset_index()
         plot_df.columns = ['Date', 'Price']
         
@@ -151,7 +192,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         }, None
     except Exception as e: return None, str(e)
 
-# --- 5. UI 渲染 ---
+# --- 6. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ 台灣副官戰略中心")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
@@ -159,10 +200,11 @@ with st.sidebar:
     if st.button("🔄 刷新全自動情報"):
         with st.spinner('同步全球數據中...'):
             st.session_state['auto_m'] = fetch_auto_macro(fred_key)
+            st.toast("✅ 數據同步完成！") # Toast 提示
     
     auto = st.session_state.get('auto_m', {})
     
-    with st.expander("🌍 v1.6j 數據校正台", expanded=True):
+    with st.expander("🌍 v1.6k 數據校正台", expanded=True):
         m1 = auto.get('twd_strong', True); st.checkbox(f"台幣匯率走強", value=m1, disabled=True)
         m2 = auto.get('sox_up', True); st.checkbox(f"費半指數上揚", value=m2, disabled=True)
         m3 = auto.get('light_pos', True); st.checkbox(f"景氣燈號: {auto.get('light_name','-')}", value=m3, disabled=True)
@@ -195,22 +237,18 @@ with st.sidebar:
     st.markdown("---")
     st.subheader(f"戰略總分: {score}")
     
-    if score >= 80:
-        st.success("🌟 結論：極度利多"); st.markdown("**水位**：80-100% | **策略**：積極追價")
-    elif score >= 60:
-        st.info("✅ 結論：穩健多頭"); st.markdown("**水位**：50-70% | **策略**：買黑不買紅")
-    elif score >= 40:
-        st.warning("⚠️ 結論：震盪觀望"); st.markdown("**水位**：30%下 | **策略**：短線進出")
-    else:
-        st.error("🛑 結論：極端風險"); st.markdown("**水位**：空手 | **策略**：現金為王")
+    # --- 彈窗按鈕 ---
+    if st.button("📜 閱讀戰略手諭", use_container_width=True):
+        show_strategy_modal(score)
 
     risk_factor = 0.8 if score < 50 else 1.0
     targets_input = st.text_input("狙擊目標 (輸入代號)", value="2330, 2317, 3231, NVDA")
     run_btn = st.button("🚀 執行波段分析")
 
 # --- 主畫面 ---
-st.header("📊 戰術分析儀表板 v1.6j")
+st.header("📊 戰術分析儀表板 v1.6k")
 if run_btn:
+    st.toast("🚀 正在掃描目標...", icon="🔍") # Toast 提示
     raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
     cols = st.columns(len(raw_tickers))
     
@@ -229,14 +267,11 @@ if run_btn:
                 else:
                     st.subheader(f"{stock_name}")
                     
-                    # 1. 台股慣例：漲紅跌綠 (delta_color="inverse")
                     st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
                     
-                    # 顯示信號 (顏色保留：綠色=通行/安全，紅色=危險/停止)
                     st.markdown(f"<h4 style='color: {res['color']}'>{res['signal']}</h4>", unsafe_allow_html=True)
                     st.caption(f"{res['msg']}")
                     
-                    # 2. 戰術表格優化 (小字體 + 緊湊佈局)
                     html_table = f"""
                     <style>
                         .small-table td, .small-table th {{ padding: 4px 8px; font-size: 13px; border: 1px solid #444; }}
@@ -252,12 +287,11 @@ if run_btn:
                     """
                     st.markdown(html_table, unsafe_allow_html=True)
                     
-                    # 3. 線圖比例優化 (使用 Altair 移除空白)
                     chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
                         x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
-                        y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)), # zero=False 是關鍵
+                        y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),
                         tooltip=['Date', 'Price']
-                    ).properties(height=200) # 設定高度
+                    ).properties(height=200)
                     
                     st.altair_chart(chart, use_container_width=True)
                     

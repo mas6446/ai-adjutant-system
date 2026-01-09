@@ -10,9 +10,10 @@ import time
 import re
 import altair as alt
 import math
+import textwrap # 新增這個庫來處理縮排問題
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.72", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.73", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -280,30 +281,31 @@ if run_btn:
 
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
-                    # 修正重點：移除所有縮排，確保 HTML 靠左對齊
-                    html_table = f"""
-<style>
-    .small-table td, .small-table th {{ padding: 4px 8px; font-size: 13px; border: 1px solid #444; }}
-    .small-table th {{ background-color: #333; color: #fff; }}
-    .highlight {{ background-color: #1f3a28; color: #7cfc00; font-weight: bold; }}
-</style>
-<table class="small-table" style="width:100%; border-collapse: collapse; margin-bottom: 10px;">
-    <tr><th colspan="3" style="text-align:center; background-color:#444;">💰 資金控管建議 (風險 {risk_pct}%)</th></tr>
-    <tr><td>建議張數</td><td class="highlight" colspan="2">{sheets} 張</td></tr>
-    <tr><td>預估成本</td><td colspan="2">${int(cost):,}</td></tr>
-    <tr><td>潛在虧損</td><td colspan="2">-${int(risk_amt):,} (觸發停損時)</td></tr>
-    
-    <tr><th colspan="3" style="text-align:center; background-color:#444;">⚔️ 執行戰術</th></tr>
-    <tr><td>掛單策略</td><td colspan="2">勿追市價，掛入「狙擊區間」</td></tr>
-    <tr><td>分批進場</td><td colspan="2">第一批 50%，確認獲利後加碼 50%</td></tr>
-    
-    <tr><th colspan="3" style="text-align:center; background-color:#444;">🎯 關鍵價位</th></tr>
-    <tr><td>第二目標</td><td>${res['tp2']:.2f}</td><td>波段滿足</td></tr>
-    <tr><td>第一目標</td><td>${res['tp1']:.2f}</td><td>減碼保本</td></tr>
-    <tr style="background-color: #223322;"><td>狙擊區間</td><td>{res['entry_zone']}</td><td>買入區</td></tr>
-    <tr style="background-color: #332222;"><td>停損防守</td><td>${res['stop']:.2f}</td><td>撤退點</td></tr>
-</table>
-"""
+                    # 使用 textwrap.dedent 來強制清除縮排，這是解決 Markdown 顯示為代碼問題的終極解法
+                    html_table = textwrap.dedent(f"""
+                        <style>
+                            .small-table td, .small-table th {{ padding: 4px 8px; font-size: 13px; border: 1px solid #444; }}
+                            .small-table th {{ background-color: #333; color: #fff; }}
+                            .highlight {{ background-color: #1f3a28; color: #7cfc00; font-weight: bold; }}
+                        </style>
+                        <table class="small-table" style="width:100%; border-collapse: collapse; margin-bottom: 10px;">
+                            <tr><th colspan="3" style="text-align:center; background-color:#444;">💰 資金控管建議 (風險 {risk_pct}%)</th></tr>
+                            <tr><td>建議張數</td><td class="highlight" colspan="2">{sheets} 張</td></tr>
+                            <tr><td>預估成本</td><td colspan="2">${int(cost):,}</td></tr>
+                            <tr><td>潛在虧損</td><td colspan="2">-${int(risk_amt):,} (觸發停損時)</td></tr>
+                            
+                            <tr><th colspan="3" style="text-align:center; background-color:#444;">⚔️ 執行戰術</th></tr>
+                            <tr><td>掛單策略</td><td colspan="2">勿追市價，掛入「狙擊區間」</td></tr>
+                            <tr><td>分批進場</td><td colspan="2">第一批 50%，確認獲利後加碼 50%</td></tr>
+                            
+                            <tr><th colspan="3" style="text-align:center; background-color:#444;">🎯 關鍵價位</th></tr>
+                            <tr><td>第二目標</td><td>${res['tp2']:.2f}</td><td>波段滿足</td></tr>
+                            <tr><td>第一目標</td><td>${res['tp1']:.2f}</td><td>減碼保本</td></tr>
+                            <tr style="background-color: #223322;"><td>狙擊區間</td><td>{res['entry_zone']}</td><td>買入區</td></tr>
+                            <tr style="background-color: #332222;"><td>停損防守</td><td>${res['stop']:.2f}</td><td>撤退點</td></tr>
+                        </table>
+                    """)
+                    
                     st.markdown(html_table, unsafe_allow_html=True)
                     
                     chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(

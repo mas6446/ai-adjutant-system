@@ -7,64 +7,56 @@ import requests
 from bs4 import BeautifulSoup
 import datetime
 import time
+import re
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 副官 v1.6g - 台股特化版", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 副官 v1.6h - 全中文化戰略版", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能：中文股名與智慧代號 ---
 
-# 快取功能：查過的股名存起來，不用每次都爬
-@st.cache_data(ttl=86400) # 24小時過期
+@st.cache_data(ttl=86400)
 def get_stock_name(code):
     """
-    從 Yahoo 股市抓取台股中文名稱
+    抓取台股中文名稱 (使用最穩定的 Title 解析法)
     """
     try:
-        # 去掉 .TW 或 .TWO 只留數字
-        clean_code = code.split('.')[0]
+        clean_code = code.split('.')[0] # 去除 .TW
         url = f"https://tw.stock.yahoo.com/quote/{clean_code}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        # 抓取網頁標題通常是 "台積電(2330) - 個股走勢..."
-        title = soup.find('h1', {'class': 'C($c-link-text) Fw(b) Fz(24px) My(2px)'})
-        if title:
-            return title.text.strip()
-        return code # 抓不到就回傳代號
+        
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            # 網頁標題通常是 "台積電(2330) - 個股走勢..."
+            title_text = soup.title.text
+            # 利用正規表達式提取中文名稱 (括號前的部分)
+            match = re.search(r'(.+)\(', title_text)
+            if match:
+                return match.group(1).strip()
+            # 備用：如果標題格式不同，嘗試直接分割
+            if "-" in title_text:
+                return title_text.split('-')[0].strip()
+        return code # 抓不到回傳代號
     except:
         return code
 
 def smart_get_data(ticker_input):
-    """
-    智慧判斷上市(.TW)或上櫃(.TWO)
-    """
+    """智慧判斷上市(.TW)或上櫃(.TWO)"""
     ticker_input = ticker_input.strip().upper()
-    
-    # 如果使用者已經打了 .TW 或美股代號，直接用
     if "." in ticker_input or not ticker_input.isdigit():
-        stock = yf.Ticker(ticker_input)
-        df = stock.history(period="1y", timeout=10)
-        return ticker_input, df
+        return ticker_input, yf.Ticker(ticker_input).history(period="1y", timeout=10)
     
-    # 如果只是數字 (如 2330)，先試 .TW
     try_tw = f"{ticker_input}.TW"
-    stock = yf.Ticker(try_tw)
-    df = stock.history(period="1y", timeout=10)
+    df = yf.Ticker(try_tw).history(period="1y", timeout=10)
+    if not df.empty: return try_tw, df
     
-    if not df.empty:
-        return try_tw, df
-    
-    # 如果 .TW 沒數據，改試 .TWO (上櫃)
     try_two = f"{ticker_input}.TWO"
-    stock = yf.Ticker(try_two)
-    df = stock.history(period="1y", timeout=10)
-    
-    if not df.empty:
-        return try_two, df
+    df = yf.Ticker(try_two).history(period="1y", timeout=10)
+    if not df.empty: return try_two, df
         
-    return ticker_input, pd.DataFrame() # 都失敗
+    return ticker_input, pd.DataFrame()
 
-# --- 3. 自動化偵蒐引擎 ---
+# --- 3. 自動化偵蒐引擎 (維持 v1.6f 架構) ---
 def fetch_auto_macro(fred_key):
     results = {}
     headers = {
@@ -72,7 +64,7 @@ def fetch_auto_macro(fred_key):
         'Referer': 'https://www.twse.com.tw/zh/page/trading/fund/BFI82U.html',
     }
     
-    # 爬蟲與 API 邏輯 (維持 v1.6f)
+    # 爬蟲邏輯
     try:
         timestamp = int(time.time() * 1000)
         url = f"https://www.twse.com.tw/rwd/zh/fund/BFI82U?date=&response=json&_={timestamp}"
@@ -85,6 +77,7 @@ def fetch_auto_macro(fred_key):
         else: results['foreign_net'] = 0.0
     except: results['foreign_net'] = 0.0
 
+    # API 與 Yahoo
     if fred_key:
         try:
             fred = Fred(api_key=fred_key)
@@ -94,7 +87,6 @@ def fetch_auto_macro(fred_key):
             results['rate_low'] = fred.get_series('INTDSRTWM193N').iloc[-1] <= fred.get_series('INTDSRTWM193N').iloc[-2]
         except: pass
 
-    # 備用數據源
     try:
         if 'vix_val' not in results or pd.isna(results['vix_val']):
             results['vix_val'] = yf.Ticker("^VIX").history(period="5d")['Close'].iloc[-1]
@@ -122,9 +114,8 @@ def fetch_auto_macro(fred_key):
     
     return results
 
-# --- 4. 戰術分析邏輯 ---
+# --- 4. 戰術分析邏輯 (雙語化) ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
-    # 因為 df 已經在 smart_get_data 獲取，這裡直接計算
     try:
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
         macd_w = df_w.ta.macd(fast=12, slow=26, signal=9)
@@ -139,14 +130,30 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         take_profit = current_price + (atr * 3.5 * risk_adj)
         golden_cross = (prev_k < prev_d) and (k_val > d_val)
 
-        if macro_score < 40: signal, color = "STAY AWAY", "red"
-        elif weekly_hist > 0 and k_val < 30 and golden_cross: signal, color = "FIRE", "green"
-        elif weekly_hist > 0 and k_val < 35: signal, color = "PREPARE", "orange"
-        elif k_val > 80: signal, color = "TAKE PROFIT", "blue"
-        else: signal, color = "WAIT", "gray"
+        # 雙語訊號邏輯
+        if macro_score < 40: 
+            signal = "STAY AWAY | 禁止進場"
+            color = "red"
+            msg = "宏觀環境險惡，現金為王，切勿逆勢操作。"
+        elif weekly_hist > 0 and k_val < 30 and golden_cross: 
+            signal = "FIRE | 全力進攻 (狙擊)"
+            color = "green"
+            msg = "週線多頭且日線低檔金叉，雙週期共振確認。"
+        elif weekly_hist > 0 and k_val < 35: 
+            signal = "PREPARE | 準備射擊"
+            color = "orange"
+            msg = "價格進入甜蜜區，手指扣在板機上，等待金叉訊號。"
+        elif k_val > 80: 
+            signal = "TAKE PROFIT | 分批止盈"
+            color = "blue"
+            msg = "短線過熱，風險報酬比降低，建議獲利放口袋。"
+        else: 
+            signal = "WAIT | 觀望續抱"
+            color = "gray"
+            msg = "趨勢延續中，持股者續抱，空手者勿追高。"
         
         return {"price": current_price, "change": (current_price/df['Close'].iloc[-2]-1)*100,
-                "signal": signal, "color": color, "stop": stop_loss, "target": take_profit, 
+                "signal": signal, "color": color, "msg": msg, "stop": stop_loss, "target": take_profit, 
                 "k": k_val, "history": df['Close']}, None
     except Exception as e: return None, str(e)
 
@@ -161,7 +168,7 @@ with st.sidebar:
     
     auto = st.session_state.get('auto_m', {})
     
-    with st.expander("🌍 v1.6g 數據校正台", expanded=True):
+    with st.expander("🌍 v1.6h 數據校正台", expanded=True):
         m1 = auto.get('twd_strong', True); st.checkbox(f"台幣匯率走強", value=m1, disabled=True)
         m2 = auto.get('sox_up', True); st.checkbox(f"費半指數上揚", value=m2, disabled=True)
         m3 = auto.get('light_pos', True); st.checkbox(f"景氣燈號: {auto.get('light_name','-')}", value=m3, disabled=True)
@@ -193,42 +200,61 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader(f"戰略總分: {score}")
-    if score >= 80: st.success("🌟 結論：極度利多"); st.caption("水位: 8-10成")
-    elif score >= 60: st.info("✅ 結論：穩健多頭"); st.caption("水位: 5-7成")
-    elif score >= 40: st.warning("⚠️ 結論：震盪觀望"); st.caption("水位: 3成下")
-    else: st.error("🛑 結論：極端風險"); st.caption("水位: 空手")
+    
+    # --- 新增：深度戰略結論 ---
+    if score >= 80:
+        st.success("🌟 結論：極度利多 (Aggressive)")
+        st.markdown("""
+        * **💰 資金水位**：80% - 100% (可融資/開槓桿)
+        * **🧠 操作心法**：順風滿帆，敢於追價。外資與基本面同步共振，回檔即是買點。
+        * **📈 選股策略**：鎖定高 Beta 的科技權值股或強勢族群龍頭。
+        """)
+    elif score >= 60:
+        st.info("✅ 結論：穩健多頭 (Standard)")
+        st.markdown("""
+        * **💰 資金水位**：50% - 70%
+        * **🧠 操作心法**：買黑不買紅。趨勢向上但有雜訊，嚴守雙週期共振訊號才出手。
+        * **📈 選股策略**：基本面優良的業績成長股，避開投機小型股。
+        """)
+    elif score >= 40:
+        st.warning("⚠️ 結論：震盪觀望 (Defensive)")
+        st.markdown("""
+        * **💰 資金水位**：30% 以下
+        * **🧠 操作心法**：打帶跑戰術。只做最有把握的突破，有獲利快跑，嚴格執行停損。
+        * **📈 選股策略**：防禦型類股 (電信、高殖利率) 或現金停泊。
+        """)
+    else:
+        st.error("🛑 結論：極端風險 (Cash is King)")
+        st.markdown("""
+        * **💰 資金水位**：0% (完全空手)
+        * **🧠 操作心法**：覆巢之下無完卵。不要嘗試抄底，耐心等待落底訊號（如 VIX 爆衝後回落）。
+        * **📈 選股策略**：無。保留子彈是唯一任務。
+        """)
 
     risk_factor = 0.8 if score < 50 else 1.0
-    # 這裡的預設值改成純數字，方便測試
-    targets_input = st.text_input("狙擊目標 (輸入數字即可)", value="2330, 2317, 3231, NVDA")
+    targets_input = st.text_input("狙擊目標 (輸入代號)", value="2330, 2317, 3231, NVDA")
     run_btn = st.button("🚀 執行波段分析")
 
 # --- 主畫面 ---
-st.header("📊 戰術分析儀表板 v1.6g")
+st.header("📊 戰術分析儀表板 v1.6h")
 if run_btn:
     raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
     cols = st.columns(len(raw_tickers))
     
     for i, raw_t in enumerate(raw_tickers):
         with cols[i]:
-            # 1. 智慧獲取數據 (自動判斷 .TW/.TWO)
             final_ticker, df = smart_get_data(raw_t)
             
             if df.empty:
                 st.error(f"{raw_t}: 無法獲取數據")
             else:
-                # 2. 抓取中文名稱
-                stock_name = get_stock_name(final_ticker)
-                
-                # 3. 執行分析
+                stock_name = get_stock_name(final_ticker) # 抓中文名
                 current_price = df['Close'].iloc[-1]
                 res, err = get_tactical_analysis(df, current_price, score, risk_factor)
                 
                 if err: st.error(err)
                 else:
-                    # 標題顯示：中文名稱 + 代號
-                    st.subheader(f"{stock_name}")
-                    
+                    st.subheader(f"{stock_name}") # 顯示中文
                     st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%")
                     
                     if res['color'] == 'green': st.success(f"### {res['signal']}")
@@ -236,6 +262,7 @@ if run_btn:
                     elif res['color'] == 'blue': st.info(f"### {res['signal']}")
                     else: st.warning(f"### {res['signal']}")
                     
+                    st.write(f"💡 **副官提示**：{res['msg']}") # 顯示中文建議
+                    
                     st.table(pd.DataFrame({"戰術": ["停損防守", "獲利目標"], "水位": [f"${res['stop']:.2f}", f"${res['target']:.2f}"]}))
                     st.line_chart(res['history'].tail(50))
-                    st.caption(f"K值: {res['k']:.1f}")

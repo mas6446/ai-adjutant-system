@@ -10,8 +10,8 @@ import time
 import re
 import altair as alt
 
-# --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 副官 v1.6k - 彈窗戰略版", layout="wide", page_icon="🛡️")
+# --- 1. 系統初始化 (正式更名) ---
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.6M", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -42,44 +42,41 @@ def smart_get_data(ticker_input):
     if not df.empty: return try_two, df
     return ticker_input, pd.DataFrame()
 
-# --- 3. 彈出視窗功能 (Dialog) ---
-@st.dialog("📋 指揮官戰略手諭")
+# --- 3. 彈出視窗功能 ---
+@st.dialog("📋 雙週期共振戰略手諭")
 def show_strategy_modal(score):
     st.caption(f"當前宏觀評分: {score} / 100")
-    
     if score >= 80:
         st.success("🌟 結論：極度利多 (Aggressive)")
         st.markdown("""
         ### 🚀 行動準則
-        * **資金水位**：`80% - 100%` (可適度開槓桿)
-        * **操作心法**：**「順風滿帆，敢於追價」**。目前外資與基本面同步共振，回檔即是買點。不要因為漲多而預設高點。
-        * **選股策略**：鎖定高 Beta 的科技權值股或強勢族群龍頭，強者恆強。
+        * **資金水位**：`80% - 100%`
+        * **心法**：**「順風滿帆」**。外資與基本面共振，回檔即買點。
+        * **策略**：鎖定高 Beta 權值股或強勢龍頭。
         """)
     elif score >= 60:
         st.info("✅ 結論：穩健多頭 (Standard)")
         st.markdown("""
         ### 🛡️ 行動準則
         * **資金水位**：`50% - 70%`
-        * **操作心法**：**「買黑不買紅」**。大趨勢向上但盤勢有雜訊，嚴守雙週期共振訊號才出手。
-        * **選股策略**：基本面優良的業績成長股，避開投機小型股。
+        * **心法**：**「買黑不買紅」**。大趨勢向上但有雜訊，嚴守雙週期訊號。
+        * **策略**：績優成長股，避開投機股。
         """)
     elif score >= 40:
         st.warning("⚠️ 結論：震盪觀望 (Defensive)")
         st.markdown("""
         ### 🚧 行動準則
         * **資金水位**：`30% 以下`
-        * **操作心法**：**「打帶跑戰術」**。只做最有把握的突破，有獲利快跑，嚴格執行停損。
-        * **選股策略**：防禦型類股 (電信、高殖利率) 或現金停泊。
+        * **心法**：**「打帶跑」**。有獲利快跑，嚴格執行停損。
+        * **策略**：防禦型或現金停泊。
         """)
     else:
         st.error("🛑 結論：極端風險 (Cash is King)")
         st.markdown("""
         ### ⛔ 行動準則
-        * **資金水位**：`0%` (完全空手)
-        * **操作心法**：**「覆巢之下無完卵」**。不要嘗試抄底，耐心等待落底訊號（如 VIX 爆衝後回落）。
-        * **選股策略**：無。保留子彈是唯一任務。
+        * **資金水位**：`0%` (空手)
+        * **心法**：**「覆巢之下無完卵」**。勿抄底，等待 VIX 回落。
         """)
-    
     st.markdown("---")
     if st.button("🫡 收到，關閉視窗"):
         st.rerun()
@@ -194,17 +191,17 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 
 # --- 6. UI 渲染 ---
 with st.sidebar:
-    st.title("🛡️ 台灣副官戰略中心")
+    st.title("🛡️ AI 雙週期共振決策系統")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
         with st.spinner('同步全球數據中...'):
             st.session_state['auto_m'] = fetch_auto_macro(fred_key)
-            st.toast("✅ 數據同步完成！") # Toast 提示
+            st.toast("✅ 數據同步完成！")
     
     auto = st.session_state.get('auto_m', {})
     
-    with st.expander("🌍 v1.6k 數據校正台", expanded=True):
+    with st.expander("🌍 v1.6M 數據校正台", expanded=True):
         m1 = auto.get('twd_strong', True); st.checkbox(f"台幣匯率走強", value=m1, disabled=True)
         m2 = auto.get('sox_up', True); st.checkbox(f"費半指數上揚", value=m2, disabled=True)
         m3 = auto.get('light_pos', True); st.checkbox(f"景氣燈號: {auto.get('light_name','-')}", value=m3, disabled=True)
@@ -237,7 +234,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader(f"戰略總分: {score}")
     
-    # --- 彈窗按鈕 ---
     if st.button("📜 閱讀戰略手諭", use_container_width=True):
         show_strategy_modal(score)
 
@@ -246,9 +242,9 @@ with st.sidebar:
     run_btn = st.button("🚀 執行波段分析")
 
 # --- 主畫面 ---
-st.header("📊 戰術分析儀表板 v1.6k")
+st.header("📊 AI 雙週期共振決策系統")
 if run_btn:
-    st.toast("🚀 正在掃描目標...", icon="🔍") # Toast 提示
+    st.toast("🚀 正在掃描目標...", icon="🔍")
     raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
     cols = st.columns(len(raw_tickers))
     
@@ -266,7 +262,6 @@ if run_btn:
                 if err: st.error(err)
                 else:
                     st.subheader(f"{stock_name}")
-                    
                     st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
                     
                     st.markdown(f"<h4 style='color: {res['color']}'>{res['signal']}</h4>", unsafe_allow_html=True)

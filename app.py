@@ -8,9 +8,10 @@ from bs4 import BeautifulSoup
 import datetime
 import time
 import re
+import altair as alt # 新增繪圖庫
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 副官 v1.6i - 多層次戰術版", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 副官 v1.6j - 台股視覺優化版", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -96,7 +97,7 @@ def fetch_auto_macro(fred_key):
     
     return results
 
-# --- 4. 戰術分析邏輯 (多層次價位) ---
+# --- 4. 戰術分析邏輯 ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
     try:
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
@@ -108,53 +109,45 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         prev_k, prev_d = stoch.iloc[-2]['STOCHk_9_3_3'], stoch.iloc[-2]['STOCHd_9_3_3']
         atr = df.ta.atr(length=14).iloc[-1]
         
-        # --- 多層次價位計算 ---
-        # 狙擊區間：現價下方的 ATR 緩衝區 (掛單用)
         entry_low = current_price - (atr * 0.5)
-        entry_high = current_price - (atr * 0.1) # 略低於現價
-        
-        # 停損：依據宏觀風險調整 (Risk Factor)
+        entry_high = current_price - (atr * 0.1)
         stop_loss = current_price - (atr * 2.0 * risk_adj)
-        
-        # 第一停利 (TP1)：1.5倍 ATR (短線落袋)
         tp1 = current_price + (atr * 1.5 * risk_adj)
-        
-        # 第二停利 (TP2)：3.5倍 ATR (波段滿足)
         tp2 = current_price + (atr * 3.5 * risk_adj)
-        
         golden_cross = (prev_k < prev_d) and (k_val > d_val)
 
         if macro_score < 40: 
             signal = "STAY AWAY | 禁止進場"
-            color = "red"
+            color = "#FF4B4B" # Red
             msg = "宏觀環境險惡，現金為王。"
         elif weekly_hist > 0 and k_val < 30 and golden_cross: 
             signal = "FIRE | 全力進攻 (狙擊)"
-            color = "green"
+            color = "#09AB3B" # Green
             msg = "雙週期共振確認，請參考「狙擊區間」佈局。"
         elif weekly_hist > 0 and k_val < 35: 
             signal = "PREPARE | 準備射擊"
-            color = "orange"
+            color = "#FFA500" # Orange
             msg = "價格進入甜蜜區，等待金叉訊號。"
         elif k_val > 80: 
             signal = "TAKE PROFIT | 分批止盈"
-            color = "blue"
+            color = "#1E90FF" # Blue
             msg = "短線過熱，建議在 TP1 附近減碼。"
         else: 
             signal = "WAIT | 觀望續抱"
-            color = "gray"
+            color = "#808080" # Gray
             msg = "趨勢延續中，持股者續抱。"
+        
+        # 準備畫圖用的 DataFrame
+        plot_df = df['Close'].reset_index()
+        plot_df.columns = ['Date', 'Price']
         
         return {
             "price": current_price, 
             "change": (current_price/df['Close'].iloc[-2]-1)*100,
             "signal": signal, "color": color, "msg": msg, 
-            "entry_zone": f"${entry_low:.1f} ~ ${entry_high:.1f}", # 新增
-            "stop": stop_loss, 
-            "tp1": tp1, # 新增
-            "tp2": tp2, # 新增
-            "atr": atr, # 新增
-            "k": k_val, "history": df['Close']
+            "entry_zone": f"${entry_low:.1f} ~ ${entry_high:.1f}", 
+            "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
+            "k": k_val, "plot_data": plot_df
         }, None
     except Exception as e: return None, str(e)
 
@@ -169,7 +162,7 @@ with st.sidebar:
     
     auto = st.session_state.get('auto_m', {})
     
-    with st.expander("🌍 v1.6i 數據校正台", expanded=True):
+    with st.expander("🌍 v1.6j 數據校正台", expanded=True):
         m1 = auto.get('twd_strong', True); st.checkbox(f"台幣匯率走強", value=m1, disabled=True)
         m2 = auto.get('sox_up', True); st.checkbox(f"費半指數上揚", value=m2, disabled=True)
         m3 = auto.get('light_pos', True); st.checkbox(f"景氣燈號: {auto.get('light_name','-')}", value=m3, disabled=True)
@@ -216,7 +209,7 @@ with st.sidebar:
     run_btn = st.button("🚀 執行波段分析")
 
 # --- 主畫面 ---
-st.header("📊 戰術分析儀表板 v1.6i")
+st.header("📊 戰術分析儀表板 v1.6j")
 if run_btn:
     raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
     cols = st.columns(len(raw_tickers))
@@ -235,32 +228,37 @@ if run_btn:
                 if err: st.error(err)
                 else:
                     st.subheader(f"{stock_name}")
-                    st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%")
                     
-                    if res['color'] == 'green': st.success(f"### {res['signal']}")
-                    elif res['color'] == 'red': st.error(f"### {res['signal']}")
-                    elif res['color'] == 'blue': st.info(f"### {res['signal']}")
-                    else: st.warning(f"### {res['signal']}")
+                    # 1. 台股慣例：漲紅跌綠 (delta_color="inverse")
+                    st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
                     
-                    st.write(f"💡 {res['msg']}")
+                    # 顯示信號 (顏色保留：綠色=通行/安全，紅色=危險/停止)
+                    st.markdown(f"<h4 style='color: {res['color']}'>{res['signal']}</h4>", unsafe_allow_html=True)
+                    st.caption(f"{res['msg']}")
                     
-                    # --- 新增：多層次戰術表 ---
-                    tactical_data = {
-                        "戰術性質": ["🚀 第二目標 (波段)", "💰 第一目標 (入袋)", "🎯 狙擊區間 (掛單)", "🛡️ 停損防守 (撤退)"],
-                        "關鍵價位": [
-                            f"${res['tp2']:.2f}",
-                            f"${res['tp1']:.2f}",
-                            f"{res['entry_zone']}",
-                            f"${res['stop']:.2f}"
-                        ],
-                        "戰術說明": [
-                            "3.5倍 ATR，波段滿足點",
-                            "1.5倍 ATR，減碼保本",
-                            "現價下方支撐區，分批佈局",
-                            "跌破必須執行，嚴守紀律"
-                        ]
-                    }
-                    st.table(pd.DataFrame(tactical_data))
+                    # 2. 戰術表格優化 (小字體 + 緊湊佈局)
+                    html_table = f"""
+                    <style>
+                        .small-table td, .small-table th {{ padding: 4px 8px; font-size: 13px; border: 1px solid #444; }}
+                        .small-table th {{ background-color: #333; color: #fff; }}
+                    </style>
+                    <table class="small-table" style="width:100%; border-collapse: collapse;">
+                        <tr><th>戰術性質</th><th>關鍵價位</th><th>說明</th></tr>
+                        <tr><td>🚀 第二目標</td><td>${res['tp2']:.2f}</td><td>3.5倍 ATR 滿足點</td></tr>
+                        <tr><td>💰 第一目標</td><td>${res['tp1']:.2f}</td><td>1.5倍 ATR 減碼</td></tr>
+                        <tr style="background-color: #223322;"><td>🎯 狙擊區間</td><td>{res['entry_zone']}</td><td>分批掛單區</td></tr>
+                        <tr style="background-color: #332222;"><td>🛡️ 停損防守</td><td>${res['stop']:.2f}</td><td>跌破撤退</td></tr>
+                    </table>
+                    """
+                    st.markdown(html_table, unsafe_allow_html=True)
                     
-                    st.line_chart(res['history'].tail(50))
-                    st.caption(f"波動值 (ATR): {res['atr']:.2f} | K值: {res['k']:.1f}")
+                    # 3. 線圖比例優化 (使用 Altair 移除空白)
+                    chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
+                        x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
+                        y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)), # zero=False 是關鍵
+                        tooltip=['Date', 'Price']
+                    ).properties(height=200) # 設定高度
+                    
+                    st.altair_chart(chart, use_container_width=True)
+                    
+                    st.caption(f"ATR: {res['atr']:.2f} | KD(9,3,3): {res['k']:.1f}")

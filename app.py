@@ -12,7 +12,7 @@ import altair as alt
 import math
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.74", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.75", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -218,7 +218,7 @@ with st.sidebar:
 
     auto = st.session_state.get('auto_m', {})
     
-    with st.expander("🌍 v1.74 數據校正台", expanded=True):
+    with st.expander("🌍 v1.75 數據校正台", expanded=True):
         m1 = auto.get('twd_strong', True); st.checkbox(f"台幣匯率走強", value=m1, disabled=True)
         m2 = auto.get('sox_up', True); st.checkbox(f"費半指數上揚", value=m2, disabled=True)
         m3 = auto.get('light_pos', True); st.checkbox(f"景氣燈號: {auto.get('light_name','-')}", value=m3, disabled=True)
@@ -280,39 +280,37 @@ if run_btn:
 
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
-                    # --- 1. 資金儀表板 (Native Metrics) ---
-                    st.markdown("##### 💰 資金配置建議")
-                    c1, c2, c3 = st.columns(3)
-                    with c1: st.metric("建議張數", f"{sheets} 張")
-                    with c2: st.metric("預估成本", f"${int(cost):,}")
-                    with c3: st.metric("潛在虧損", f"-${int(risk_amt):,}", help="若觸發停損的預估虧損金額")
+                    # --- 整合式戰報 (Compact Pandas Table) ---
+                    # 將「資金建議」與「戰術價位」合併，避免字體過大，並確保無亂碼
                     
-                    st.markdown("---")
-                    
-                    # --- 2. 戰術表格 (Pandas Styler - 保證無亂碼) ---
-                    st.markdown("##### ⚔️ 戰術關鍵價位")
-                    
-                    # 建立數據
-                    tactical_data = [
-                        {"戰術性質": "🚀 第二目標", "關鍵價位": f"${res['tp2']:.2f}", "說明": "波段滿足點 (3.5x ATR)"},
-                        {"戰術性質": "💰 第一目標", "關鍵價位": f"${res['tp1']:.2f}", "說明": "減碼保本 (1.5x ATR)"},
-                        {"戰術性質": "🎯 狙擊區間", "關鍵價位": f"{res['entry_zone']}", "說明": "分批掛單區 (勿追高)"},
-                        {"戰術性質": "🛡️ 停損防守", "關鍵價位": f"${res['stop']:.2f}", "說明": "跌破務必撤退"}
+                    full_report_data = [
+                        # 第一區：資金建議
+                        {"類別": "💰 資金建議", "項目": "建議張數", "數值": f"{sheets} 張", "備註": "分批進場"},
+                        {"類別": "💰 資金建議", "項目": "預估成本", "數值": f"${int(cost):,}", "備註": "準備資金"},
+                        {"類別": "💰 資金建議", "項目": "潛在虧損", "數值": f"-${int(risk_amt):,}", "備註": "最大風險"},
+                        # 第二區：戰術價位
+                        {"類別": "⚔️ 戰術價位", "項目": "🚀 第二目標", "數值": f"${res['tp2']:.2f}", "備註": "獲利了結"},
+                        {"類別": "⚔️ 戰術價位", "項目": "💰 第一目標", "數值": f"${res['tp1']:.2f}", "備註": "減碼保本"},
+                        {"類別": "⚔️ 戰術價位", "項目": "🎯 狙擊區間", "數值": f"{res['entry_zone']}", "備註": "掛單區"},
+                        {"類別": "⚔️ 戰術價位", "項目": "🛡️ 停損防守", "數值": f"${res['stop']:.2f}", "備註": "跌破撤退"}
                     ]
-                    df_tact = pd.DataFrame(tactical_data)
                     
-                    # 定義上色邏輯 (Pandas Style)
-                    def highlight_rows(row):
-                        if "狙擊" in row["戰術性質"]:
+                    df_report = pd.DataFrame(full_report_data)
+                    
+                    # 設定樣式
+                    def highlight_report(row):
+                        if "狙擊" in row["項目"]:
                             return ['background-color: #0d2e18; color: #90ee90; font-weight: bold'] * len(row)
-                        elif "停損" in row["戰術性質"]:
+                        elif "停損" in row["項目"]:
                             return ['background-color: #381212; color: #ff8a8a'] * len(row)
+                        elif "資金" in row["類別"]:
+                            return ['background-color: #222222; color: #dddddd'] * len(row)
                         return [''] * len(row)
-                    
-                    # 渲染表格 (使用 st.table)
-                    st.table(df_tact.style.apply(highlight_rows, axis=1))
 
-                    # 3. 圖表
+                    # 渲染表格 (隱藏索引，更乾淨)
+                    st.table(df_report.style.apply(highlight_report, axis=1).hide(axis="index"))
+
+                    # K線圖
                     chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
                         x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
                         y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),

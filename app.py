@@ -12,7 +12,7 @@ import altair as alt
 import math
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.85", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.86", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -153,7 +153,7 @@ def calculate_weighted_cdp(df):
     except:
         return {"PT": 0, "AH": 0, "NH": 0, "NL": 0, "AL": 0}
 
-# --- 7. 戰術分析邏輯 (升級：結構停損) ---
+# --- 7. 戰術分析邏輯 ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
     try:
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
@@ -174,22 +174,16 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         entry_target_max = max(atr_low, cdp['NL']) if cdp['NL'] > 0 else current_price
         entry_zone_str = f"${entry_target_min:.1f} ~ ${entry_target_max:.1f}"
 
-        # 3. 計算 停損 (重點修正！)
-        # ATR 停損 (寬)
+        # 3. 計算 停損 (結構優先)
         stop_atr = current_price - (atr * 2.0 * risk_adj)
-        # 結構停損 (窄) - 昨日低點 - 0.5% 緩衝
         last_low = df.iloc[-1]['Low']
         stop_structure = last_low * 0.995 
-        
-        # 智慧選擇：選擇「較高」的那個價格作為停損 (也就是較緊的停損)，保護獲利
-        # 但如果 ATR 停損比結構停損還高(這種情況少見，通常是剛大漲)，則用 ATR
         stop_loss = max(stop_atr, stop_structure)
 
         tp1 = current_price + (atr * 1.5 * risk_adj)
         tp2 = current_price + (atr * 3.5 * risk_adj)
         golden_cross = (prev_k < prev_d) and (k_val > d_val)
 
-        # 判斷是否在區間內
         in_sniper_zone = (current_price <= entry_target_max * 1.005)
 
         if macro_score < 40: 
@@ -227,6 +221,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
             "entry_zone": entry_zone_str,
             "cdp_pt": cdp['PT'],
             "cdp_nl": cdp['NL'],
+            "cdp_nh": cdp['NH'], # 新增：傳回 NH (突破價)
             "entry_price_avg": entry_target_max,
             "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
             "k": k_val, "plot_data": plot_df
@@ -236,7 +231,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.85 結構防守版")
+    st.caption("v1.86 全戰譜監控版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -298,13 +293,16 @@ if run_analysis:
 
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
+                    # 數據準備
+                    breakout_price = res['cdp_nh']
                     aggressive_price = res['cdp_pt']
                     sniper_price = res['cdp_nl']
                     
-                    # 使用 HTML 實體 &#36; 確保顯示
+                    # 確保沒有縮排
                     html_content = f"""
 <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
 <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;"><strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span></div>
+<div style="margin-bottom: 2px;"><strong style="color: #ddd;">⚡ 突破:</strong> <span style="color:#FF4500; font-weight:bold;">&#36;{breakout_price:.2f}</span> <span style="color:#888; font-size:11px;">(NH)</span></div>
 <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span></div>
 <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span></div>
 <div style="margin-top: 4px; margin-bottom: 2px;"><strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span></div>

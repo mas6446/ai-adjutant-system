@@ -13,7 +13,7 @@ import math
 import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.82", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.83", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -54,23 +54,7 @@ def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop
     estimated_cost = max_sheets * 1000 * entry_price
     return max_sheets, estimated_cost, risk_amount
 
-# --- 4. 核心運算：加權 CDP (Weighted) ---
-def calculate_weighted_cdp(df):
-    try:
-        last = df.iloc[-1]
-        h = last['High']
-        l = last['Low']
-        c = last['Close']
-        pt = (h + l + 2 * c) / 4
-        ah = pt + (h - l)
-        nh = 2 * pt - l
-        nl = 2 * pt - h
-        al = pt - (h - l)
-        return {"PT": pt, "AH": ah, "NH": nh, "NL": nl, "AL": al}
-    except:
-        return {"PT": 0, "AH": 0, "NH": 0, "NL": 0, "AL": 0}
-
-# --- 5. 彈出視窗功能 ---
+# --- 4. 彈出視窗功能 ---
 @st.dialog("📋 雙週期共振戰略手諭")
 def show_strategy_modal(score):
     st.caption(f"當前宏觀評分: {score} / 100")
@@ -102,7 +86,7 @@ def show_strategy_modal(score):
     if st.button("🫡 收到，關閉視窗"):
         st.rerun()
 
-# --- 6. 自動化偵蒐引擎 ---
+# --- 5. 自動化偵蒐引擎 ---
 def fetch_auto_macro(fred_key):
     results = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -154,7 +138,23 @@ def fetch_auto_macro(fred_key):
     
     return results
 
-# --- 7. 戰術分析邏輯 (新增 AMBUSH 信號) ---
+# --- 6. 核心運算：加權 CDP (Weighted) ---
+def calculate_weighted_cdp(df):
+    try:
+        last = df.iloc[-1]
+        h = last['High']
+        l = last['Low']
+        c = last['Close']
+        pt = (h + l + 2 * c) / 4
+        ah = pt + (h - l)
+        nh = 2 * pt - l
+        nl = 2 * pt - h
+        al = pt - (h - l)
+        return {"PT": pt, "AH": ah, "NH": nh, "NL": nl, "AL": al}
+    except:
+        return {"PT": 0, "AH": 0, "NH": 0, "NL": 0, "AL": 0}
+
+# --- 7. 戰術分析邏輯 ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
     try:
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
@@ -168,12 +168,10 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         
         cdp = calculate_weighted_cdp(df)
         atr_low = current_price - (atr * 0.5)
-        atr_high_band = current_price - (atr * 0.1)
         
+        # 狙擊區間 (NL vs ATR)
         entry_target_min = min(atr_low, cdp['NL']) if cdp['NL'] > 0 else atr_low
-        entry_target_max = max(atr_low, cdp['NL']) if cdp['NL'] > 0 else atr_high_band
-        
-        # 顯示用的區間 (保留小數點後一位)
+        entry_target_max = max(atr_low, cdp['NL']) if cdp['NL'] > 0 else current_price
         entry_zone_str = f"${entry_target_min:.1f} ~ ${entry_target_max:.1f}"
 
         stop_loss = current_price - (atr * 2.0 * risk_adj)
@@ -181,26 +179,25 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         tp2 = current_price + (atr * 3.5 * risk_adj)
         golden_cross = (prev_k < prev_d) and (k_val > d_val)
 
-        # 判斷是否「身在狙擊區中」
-        in_sniper_zone = (current_price <= entry_target_max * 1.005) # 給予 0.5% 誤差寬容
+        # 判斷是否在區間內
+        in_sniper_zone = (current_price <= entry_target_max * 1.005)
 
         if macro_score < 40: 
             signal = "STAY AWAY | 禁止進場"
             color = "#FF4B4B"
-            msg = "宏觀風險極高，現金為王。"
+            msg = "宏觀風險極高，建議空手。"
         elif weekly_hist > 0 and k_val < 30 and golden_cross: 
             signal = "FIRE | 全力進攻 (狙擊)"
-            color = "#09AB3B" # Green
-            msg = "雙週期共振確認，動能轉強。"
+            color = "#09AB3B"
+            msg = "雙週期共振確認，建議佈局。"
         elif weekly_hist > 0 and in_sniper_zone: 
-            # 新增 AMBUSH 邏輯：週線多頭 + 價格已跌入狙擊區 = 埋伏
             signal = "AMBUSH | 埋伏接單"
-            color = "#00CED1" # DarkTurquoise
+            color = "#00CED1"
             msg = "價格已入狙擊區，執行左側掛單。"
         elif weekly_hist > 0 and k_val < 35: 
             signal = "PREPARE | 準備射擊"
-            color = "#FFA500" # Orange
-            msg = "價格進入甜蜜區，等待訊號。"
+            color = "#FFA500"
+            msg = "價格進入甜蜜區，等待金叉。"
         elif k_val > 80: 
             signal = "TAKE PROFIT | 分批止盈"
             color = "#1E90FF"
@@ -218,7 +215,8 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
             "change": (current_price/df['Close'].iloc[-2]-1)*100,
             "signal": signal, "color": color, "msg": msg, 
             "entry_zone": entry_zone_str,
-            "cdp_nl": cdp['NL'],
+            "cdp_pt": cdp['PT'], # 回傳 PT (積極點)
+            "cdp_nl": cdp['NL'], # 回傳 NL (狙擊點)
             "entry_price_avg": entry_target_max,
             "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
             "k": k_val, "plot_data": plot_df
@@ -228,7 +226,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.82 埋伏狙擊版")
+    st.caption("v1.83 雙軌進擊版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -241,6 +239,7 @@ with st.sidebar:
         risk_pct = st.slider("風險容忍 (%)", 1.0, 5.0, 2.0)
         st.caption(f"最大虧損限制: **${int(total_capital * risk_pct / 100):,}**")
 
+    # 宏觀數據計算
     auto = st.session_state.get('auto_m', {})
     m1 = auto.get('twd_strong', True); m2 = auto.get('sox_up', True)
     m3 = auto.get('light_pos', True); m4 = auto.get('foreign_net', 0) > 0
@@ -291,24 +290,32 @@ if run_analysis:
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
                     safe_entry = res['entry_zone'].replace('$', '&#36;')
-                    cdp_nl_display = f"&#36;{res['cdp_nl']:.2f}"
+                    
+                    # 雙軌進擊顯示邏輯
+                    # 1. 積極點 (PT)
+                    aggressive_price = res['cdp_pt']
+                    
+                    # 2. 狙擊點 (NL)
+                    sniper_price = res['cdp_nl']
                     
                     tactical_card = textwrap.dedent(f"""
                     <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
                         <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;">
-                            <strong style="color: #ddd;">💰 建議:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span>
+                            <strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span>
+                        </div>
+                        
+                        <div style="margin-bottom: 2px;">
+                            <strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span>
                         </div>
                         <div style="margin-bottom: 2px;">
-                            <strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90;">{safe_entry}</span>
+                            <strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span>
                         </div>
-                        <div style="margin-bottom: 2px; font-size: 11px; color: #888;">
-                            (CDP NL支撐參考: <span style="color:#aaa;">{cdp_nl_display}</span>)
-                        </div>
-                        <div style="margin-bottom: 2px;">
+                        
+                        <div style="margin-top: 4px; margin-bottom: 2px;">
                             <strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span>
                         </div>
                         <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;">
-                            <strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> <span style="color:#888; font-size:11px;">(半)</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span> <span style="color:#888; font-size:11px;">(全)</span>
+                            <strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span>
                         </div>
                     </div>
                     """)

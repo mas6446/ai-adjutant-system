@@ -13,7 +13,7 @@ import math
 import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.78", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.79", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -249,19 +249,15 @@ if run_analysis:
                 
                 if err: st.error(err)
                 else:
-                    # 1. 股票資訊
                     st.markdown(f"### {stock_name}")
                     st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
                     
-                    # 2. 狀態信號 (使用 Colored HTML Header)
                     st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin-bottom: 5px;'>{res['signal']}</p>", unsafe_allow_html=True)
                     st.caption(f"{res['msg']}")
 
-                    # 3. 微型戰術卡片 (Micro-Tactical Card)
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
-                    # 使用 textwrap.dedent 確保縮排不會導致代碼顯示 Bug
-                    # 樣式：13px 字體，緊湊行距，背景微調
+                    # 微型戰術卡片 (含停利建議)
                     tactical_card = textwrap.dedent(f"""
                     <div style="background-color: #262730; padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.6; border: 1px solid #444;">
                         <div style="margin-bottom: 6px; border-bottom: 1px solid #555; padding-bottom: 4px;">
@@ -269,15 +265,17 @@ if run_analysis:
                         </div>
                         <div><b>🎯 狙擊:</b> <span style="color:#4CAF50; font-weight:bold">{res['entry_zone']}</span></div>
                         <div><b>🛡️ 停損:</b> <span style="color:#FF5252; font-weight:bold">${res['stop']:.2f}</span></div>
-                        <div style="margin-top: 4px;"><b>🚀 目標:</b> ${res['tp1']:.2f} / ${res['tp2']:.2f}</div>
+                        
+                        <div style="border-top: 1px dotted #666; margin-top: 6px; padding-top: 4px;">
+                            <b>💵 停利:</b> ${res['tp1']:.2f} <span style="color:#aaa; font-size:11px">(半)</span> ➜ ${res['tp2']:.2f} <span style="color:#aaa; font-size:11px">(全)</span>
+                        </div>
                     </div>
                     """)
                     st.markdown(tactical_card, unsafe_allow_html=True)
 
-                    # 4. K線圖
                     chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
                         x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
                         y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),
                         tooltip=['Date', 'Price']
-                    ).properties(height=180) # 高度略為縮小以適配
+                    ).properties(height=180)
                     st.altair_chart(chart, use_container_width=True)

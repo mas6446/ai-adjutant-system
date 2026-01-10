@@ -10,9 +10,10 @@ import time
 import re
 import altair as alt
 import math
+import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.75", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.76", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -60,33 +61,26 @@ def show_strategy_modal(score):
     if score >= 80:
         st.success("🌟 結論：極度利多 (Aggressive)")
         st.markdown("""
-        ### 🚀 行動準則
         * **資金水位**：`80% - 100%`
-        * **心法**：**「順風滿帆」**。外資與基本面共振，回檔即買點。
-        * **策略**：鎖定高 Beta 權值股或強勢龍頭。
+        * **策略**：順風滿帆，敢於追價，鎖定權值股。
         """)
     elif score >= 60:
         st.info("✅ 結論：穩健多頭 (Standard)")
         st.markdown("""
-        ### 🛡️ 行動準則
         * **資金水位**：`50% - 70%`
-        * **心法**：**「買黑不買紅」**。大趨勢向上但有雜訊，嚴守雙週期訊號。
-        * **策略**：績優成長股，避開投機股。
+        * **策略**：買黑不買紅，嚴守雙週期訊號。
         """)
     elif score >= 40:
         st.warning("⚠️ 結論：震盪觀望 (Defensive)")
         st.markdown("""
-        ### 🚧 行動準則
         * **資金水位**：`30% 以下`
-        * **心法**：**「打帶跑」**。有獲利快跑，嚴格執行停損。
-        * **策略**：防禦型或現金停泊。
+        * **策略**：打帶跑，有獲利快跑。
         """)
     else:
         st.error("🛑 結論：極端風險 (Cash is King)")
         st.markdown("""
-        ### ⛔ 行動準則
         * **資金水位**：`0%` (空手)
-        * **心法**：**「覆巢之下無完卵」**。勿抄底，等待 VIX 回落。
+        * **策略**：覆巢之下無完卵，等待落底。
         """)
     st.markdown("---")
     if st.button("🫡 收到，關閉視窗"):
@@ -95,10 +89,7 @@ def show_strategy_modal(score):
 # --- 5. 自動化偵蒐引擎 ---
 def fetch_auto_macro(fred_key):
     results = {}
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.twse.com.tw/zh/page/trading/fund/BFI82U.html',
-    }
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         timestamp = int(time.time() * 1000)
         url = f"https://www.twse.com.tw/rwd/zh/fund/BFI82U?date=&response=json&_={timestamp}"
@@ -168,24 +159,24 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 
         if macro_score < 40: 
             signal = "STAY AWAY | 禁止進場"
-            color = "#FF4B4B" 
-            msg = "宏觀環境險惡，現金為王。"
+            color = "red"
+            msg = "宏觀風險極高，建議空手。"
         elif weekly_hist > 0 and k_val < 30 and golden_cross: 
             signal = "FIRE | 全力進攻 (狙擊)"
-            color = "#09AB3B" 
-            msg = "雙週期共振確認，請參考「狙擊區間」佈局。"
+            color = "green"
+            msg = "雙週期共振確認，建議佈局。"
         elif weekly_hist > 0 and k_val < 35: 
             signal = "PREPARE | 準備射擊"
-            color = "#FFA500" 
-            msg = "價格進入甜蜜區，等待金叉訊號。"
+            color = "orange"
+            msg = "價格進入甜蜜區，等待金叉。"
         elif k_val > 80: 
             signal = "TAKE PROFIT | 分批止盈"
-            color = "#1E90FF" 
-            msg = "短線過熱，建議在 TP1 附近減碼。"
+            color = "blue"
+            msg = "過熱，建議減碼。"
         else: 
             signal = "WAIT | 觀望續抱"
-            color = "#808080" 
-            msg = "趨勢延續中，持股者續抱。"
+            color = "gray"
+            msg = "趨勢延續中。"
         
         plot_df = df['Close'].reset_index()
         plot_df.columns = ['Date', 'Price']
@@ -211,35 +202,28 @@ with st.sidebar:
             st.session_state['auto_m'] = fetch_auto_macro(fred_key)
             st.toast("✅ 數據同步完成！")
     
-    with st.expander("💰 資金指揮部 (Position Sizing)", expanded=True):
-        total_capital = st.number_input("總戰備資金 (TWD)", value=1000000, step=100000)
-        risk_pct = st.slider("單筆風險容忍 (%)", 1.0, 5.0, 2.0)
-        st.caption(f"🛡️ 單筆最大虧損限制: **${int(total_capital * risk_pct / 100):,}**")
+    with st.expander("💰 資金指揮部", expanded=True):
+        total_capital = st.number_input("戰備資金 (TWD)", value=1000000, step=100000)
+        risk_pct = st.slider("風險容忍 (%)", 1.0, 5.0, 2.0)
+        st.caption(f"最大虧損限制: **${int(total_capital * risk_pct / 100):,}**")
 
+    # 簡化宏觀數據顯示
     auto = st.session_state.get('auto_m', {})
-    
-    with st.expander("🌍 v1.75 數據校正台", expanded=True):
-        m1 = auto.get('twd_strong', True); st.checkbox(f"台幣匯率走強", value=m1, disabled=True)
-        m2 = auto.get('sox_up', True); st.checkbox(f"費半指數上揚", value=m2, disabled=True)
-        m3 = auto.get('light_pos', True); st.checkbox(f"景氣燈號: {auto.get('light_name','-')}", value=m3, disabled=True)
-        m5 = auto.get('sp500_bull', True); st.checkbox(f"S&P500 多頭", value=m5, disabled=True)
-        m6 = auto.get('cpi_ok', True); m7 = auto.get('rate_low', True)
-        st.markdown("---")
-        val_foreign_raw = auto.get('foreign_net', 0.0)
-        val_foreign = st.number_input("外資買賣超 (億)", value=float(val_foreign_raw))
-        m4 = val_foreign > 0
-        val_yield_raw = auto.get('yield_val', 4.0)
-        if pd.isna(val_yield_raw): val_yield_raw = 4.0
-        val_yield = st.number_input("10Y 美債 (%)", value=float(val_yield_raw)); m8 = val_yield < 4.5
-        val_dxy_raw = auto.get('dxy_val', 104.0)
-        if pd.isna(val_dxy_raw): val_dxy_raw = 104.0
-        val_dxy = st.number_input("美元指數 DXY", value=float(val_dxy_raw)); m9 = val_dxy < 105.0
-        val_vix_raw = auto.get('vix_val', 15.0)
-        if pd.isna(val_vix_raw): val_vix_raw = 15.0
-        val_vix = st.number_input("VIX 恐慌指數", value=float(val_vix_raw)); m10 = val_vix < 20.0
-        st.markdown("---")
-        v_pmi = st.number_input("製造業 PMI", value=50.0); m11 = v_pmi > 50.0
-        v_export = st.number_input("出口訂單年增(%)", value=5.0); m12 = v_export > 0
+    with st.expander("🌍 v1.76 數據校正台", expanded=False): # 預設收起
+        st.write("詳細宏觀數據請展開查看...")
+        # (這裡為了簡潔，保留運算邏輯但隱藏詳細勾選框的顯示，如需修改可展開)
+        # 實際上為了計算 score，我們需要這裡的變數
+        m1 = auto.get('twd_strong', True)
+        m2 = auto.get('sox_up', True)
+        m3 = auto.get('light_pos', True)
+        m4 = auto.get('foreign_net', 0) > 0
+        m5 = auto.get('sp500_bull', True)
+        m6 = auto.get('cpi_ok', True)
+        m7 = auto.get('rate_low', True)
+        val_yield = auto.get('yield_val', 4.0); m8 = val_yield < 4.5
+        val_dxy = auto.get('dxy_val', 104.0); m9 = val_dxy < 105.0
+        val_vix = auto.get('vix_val', 15.0); m10 = val_vix < 20.0
+        m11 = True; m12 = True # 預設值
 
     score = int((sum([m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12]) / 12) * 100)
     
@@ -272,45 +256,35 @@ if run_btn:
                 
                 if err: st.error(err)
                 else:
+                    # 1. 標題區
                     st.subheader(f"{stock_name}")
                     st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
                     
-                    st.markdown(f"<h4 style='color: {res['color']}'>{res['signal']}</h4>", unsafe_allow_html=True)
-                    st.caption(f"{res['msg']}")
-
+                    # 2. 信號區 (簡潔)
+                    if res['color'] == 'green': st.success(f"**{res['signal']}**")
+                    elif res['color'] == 'red': st.error(f"**{res['signal']}**")
+                    elif res['color'] == 'orange': st.warning(f"**{res['signal']}**")
+                    else: st.info(f"**{res['signal']}**")
+                    
+                    # 3. 戰術指令區 (無表格，純文字流)
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
-                    # --- 整合式戰報 (Compact Pandas Table) ---
-                    # 將「資金建議」與「戰術價位」合併，避免字體過大，並確保無亂碼
+                    # 使用標準 Markdown 進行排版
+                    st.markdown(f"""
+                    **💰 資金建議**
+                    - 建議張數: **{sheets} 張**
+                    - 預估成本: **${int(cost):,}**
+                    - 潛在風險: <span style='color:red'>-${int(risk_amt):,}</span>
+                    """, unsafe_allow_html=True)
                     
-                    full_report_data = [
-                        # 第一區：資金建議
-                        {"類別": "💰 資金建議", "項目": "建議張數", "數值": f"{sheets} 張", "備註": "分批進場"},
-                        {"類別": "💰 資金建議", "項目": "預估成本", "數值": f"${int(cost):,}", "備註": "準備資金"},
-                        {"類別": "💰 資金建議", "項目": "潛在虧損", "數值": f"-${int(risk_amt):,}", "備註": "最大風險"},
-                        # 第二區：戰術價位
-                        {"類別": "⚔️ 戰術價位", "項目": "🚀 第二目標", "數值": f"${res['tp2']:.2f}", "備註": "獲利了結"},
-                        {"類別": "⚔️ 戰術價位", "項目": "💰 第一目標", "數值": f"${res['tp1']:.2f}", "備註": "減碼保本"},
-                        {"類別": "⚔️ 戰術價位", "項目": "🎯 狙擊區間", "數值": f"{res['entry_zone']}", "備註": "掛單區"},
-                        {"類別": "⚔️ 戰術價位", "項目": "🛡️ 停損防守", "數值": f"${res['stop']:.2f}", "備註": "跌破撤退"}
-                    ]
+                    st.markdown(f"""
+                    **⚔️ 戰術關鍵點**
+                    - 🎯 狙擊區間: <span style='color:#2E8B57; font-weight:bold'>{res['entry_zone']}</span> (分批掛單)
+                    - 🛡️ 停損防守: <span style='color:#DC143C; font-weight:bold'>${res['stop']:.2f}</span>
+                    - 🚀 獲利目標: **${res['tp1']:.2f}** (第一) / **${res['tp2']:.2f}** (第二)
+                    """, unsafe_allow_html=True)
                     
-                    df_report = pd.DataFrame(full_report_data)
-                    
-                    # 設定樣式
-                    def highlight_report(row):
-                        if "狙擊" in row["項目"]:
-                            return ['background-color: #0d2e18; color: #90ee90; font-weight: bold'] * len(row)
-                        elif "停損" in row["項目"]:
-                            return ['background-color: #381212; color: #ff8a8a'] * len(row)
-                        elif "資金" in row["類別"]:
-                            return ['background-color: #222222; color: #dddddd'] * len(row)
-                        return [''] * len(row)
-
-                    # 渲染表格 (隱藏索引，更乾淨)
-                    st.table(df_report.style.apply(highlight_report, axis=1).hide(axis="index"))
-
-                    # K線圖
+                    # 4. K線圖
                     chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
                         x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
                         y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),

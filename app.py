@@ -10,9 +10,10 @@ import time
 import re
 import altair as alt
 import math
+import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.77", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.78", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -111,7 +112,6 @@ def fetch_auto_macro(fred_key):
         except: pass
 
     try:
-        # 備用數據源
         if 'vix_val' not in results or pd.isna(results['vix_val']):
             results['vix_val'] = yf.Ticker("^VIX").history(period="5d")['Close'].iloc[-1]
         if 'yield_val' not in results or pd.isna(results['yield_val']):
@@ -159,23 +159,23 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 
         if macro_score < 40: 
             signal = "STAY AWAY | 禁止進場"
-            color = "red"
+            color = "#FF4B4B"
             msg = "宏觀風險極高，建議空手。"
         elif weekly_hist > 0 and k_val < 30 and golden_cross: 
             signal = "FIRE | 全力進攻 (狙擊)"
-            color = "green"
+            color = "#09AB3B"
             msg = "雙週期共振確認，建議佈局。"
         elif weekly_hist > 0 and k_val < 35: 
             signal = "PREPARE | 準備射擊"
-            color = "orange"
+            color = "#FFA500"
             msg = "價格進入甜蜜區，等待金叉。"
         elif k_val > 80: 
             signal = "TAKE PROFIT | 分批止盈"
-            color = "blue"
+            color = "#1E90FF"
             msg = "過熱，建議減碼。"
         else: 
             signal = "WAIT | 觀望續抱"
-            color = "gray"
+            color = "#808080"
             msg = "趨勢延續中。"
         
         plot_df = df['Close'].reset_index()
@@ -209,24 +209,13 @@ with st.sidebar:
 
     # 宏觀數據計算
     auto = st.session_state.get('auto_m', {})
-    
-    # 計算分數所需變數 (即使不顯示細節，這裡也必須執行)
-    m1 = auto.get('twd_strong', True)
-    m2 = auto.get('sox_up', True)
-    m3 = auto.get('light_pos', True)
-    m4 = auto.get('foreign_net', 0) > 0
-    m5 = auto.get('sp500_bull', True)
-    m6 = auto.get('cpi_ok', True)
-    m7 = auto.get('rate_low', True)
+    m1 = auto.get('twd_strong', True); m2 = auto.get('sox_up', True)
+    m3 = auto.get('light_pos', True); m4 = auto.get('foreign_net', 0) > 0
+    m5 = auto.get('sp500_bull', True); m6 = auto.get('cpi_ok', True); m7 = auto.get('rate_low', True)
     val_yield = auto.get('yield_val', 4.0); m8 = val_yield < 4.5
     val_dxy = auto.get('dxy_val', 104.0); m9 = val_dxy < 105.0
     val_vix = auto.get('vix_val', 15.0); m10 = val_vix < 20.0
     m11 = True; m12 = True 
-
-    # 顯示宏觀狀態
-    with st.expander("🌍 v1.77 宏觀數據 (已摺疊)", expanded=False):
-        st.write(f"外資: {auto.get('foreign_net', 0)}億 | VIX: {val_vix:.1f}")
-        st.write(f"美債: {val_yield:.1f}% | DXY: {val_dxy:.1f}")
 
     score = int((sum([m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12]) / 12) * 100)
     
@@ -237,14 +226,11 @@ with st.sidebar:
 
     risk_factor = 0.8 if score < 50 else 1.0
     targets_input = st.text_input("狙擊目標 (輸入代號)", value="2330, 2317, 3231, NVDA")
-    
-    # --- 關鍵修正：確保按鈕點擊後狀態可持續 ---
     run_analysis = st.button("🚀 執行波段分析", type="primary")
 
 # --- 主畫面 ---
 st.header("📊 AI 雙週期共振決策系統")
 
-# 當按下按鈕或已經有分析結果時顯示
 if run_analysis:
     st.toast("🚀 正在掃描目標...", icon="🔍")
     raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
@@ -263,45 +249,35 @@ if run_analysis:
                 
                 if err: st.error(err)
                 else:
-                    # 1. 股票標題與現價 (原生 Streamlit 排版)
-                    st.subheader(f"{stock_name}")
+                    # 1. 股票資訊
+                    st.markdown(f"### {stock_name}")
                     st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
                     
-                    # 2. 訊號燈
-                    if res['color'] == 'green': 
-                        st.success(f"**{res['signal']}**\n\n{res['msg']}")
-                    elif res['color'] == 'red': 
-                        st.error(f"**{res['signal']}**\n\n{res['msg']}")
-                    elif res['color'] == 'orange': 
-                        st.warning(f"**{res['signal']}**\n\n{res['msg']}")
-                    else: 
-                        st.info(f"**{res['signal']}**\n\n{res['msg']}")
-                    
-                    # 3. 資金與戰術 (原生 Columns 排版 - 絕對無亂碼)
+                    # 2. 狀態信號 (使用 Colored HTML Header)
+                    st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin-bottom: 5px;'>{res['signal']}</p>", unsafe_allow_html=True)
+                    st.caption(f"{res['msg']}")
+
+                    # 3. 微型戰術卡片 (Micro-Tactical Card)
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
-                    st.markdown("##### 💰 資金佈局")
-                    c1, c2 = st.columns(2)
-                    c1.markdown(f"**建議張數**\n\n### {sheets} 張")
-                    c2.markdown(f"**預估成本**\n\n### ${int(cost):,}")
-                    st.caption(f"⚠️ 潛在風險: -${int(risk_amt):,}")
-
-                    st.markdown("---")
-                    st.markdown("##### ⚔️ 戰術價位")
-                    
-                    # 使用原生 metric 來顯示價位，乾淨俐落
-                    rc1, rc2 = st.columns(2)
-                    rc1.metric("🚀 第二獲利", f"${res['tp2']:.2f}", "波段滿足")
-                    rc2.metric("💰 第一獲利", f"${res['tp1']:.2f}", "減碼保本")
-                    
-                    rc3, rc4 = st.columns(2)
-                    rc3.metric("🎯 狙擊區間", f"{res['entry_zone']}", "掛單買進")
-                    rc4.metric("🛡️ 停損防守", f"${res['stop']:.2f}", "跌破撤退", delta_color="inverse")
+                    # 使用 textwrap.dedent 確保縮排不會導致代碼顯示 Bug
+                    # 樣式：13px 字體，緊湊行距，背景微調
+                    tactical_card = textwrap.dedent(f"""
+                    <div style="background-color: #262730; padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.6; border: 1px solid #444;">
+                        <div style="margin-bottom: 6px; border-bottom: 1px solid #555; padding-bottom: 4px;">
+                            <b>💰 建議:</b> {sheets} 張 <span style="color:#aaa; font-size:11px">(${int(cost/1000)}k)</span>
+                        </div>
+                        <div><b>🎯 狙擊:</b> <span style="color:#4CAF50; font-weight:bold">{res['entry_zone']}</span></div>
+                        <div><b>🛡️ 停損:</b> <span style="color:#FF5252; font-weight:bold">${res['stop']:.2f}</span></div>
+                        <div style="margin-top: 4px;"><b>🚀 目標:</b> ${res['tp1']:.2f} / ${res['tp2']:.2f}</div>
+                    </div>
+                    """)
+                    st.markdown(tactical_card, unsafe_allow_html=True)
 
                     # 4. K線圖
                     chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
                         x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
                         y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),
                         tooltip=['Date', 'Price']
-                    ).properties(height=200)
+                    ).properties(height=180) # 高度略為縮小以適配
                     st.altair_chart(chart, use_container_width=True)

@@ -10,10 +10,9 @@ import time
 import re
 import altair as alt
 import math
-import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.83", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.84", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -215,8 +214,8 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
             "change": (current_price/df['Close'].iloc[-2]-1)*100,
             "signal": signal, "color": color, "msg": msg, 
             "entry_zone": entry_zone_str,
-            "cdp_pt": cdp['PT'], # 回傳 PT (積極點)
-            "cdp_nl": cdp['NL'], # 回傳 NL (狙擊點)
+            "cdp_pt": cdp['PT'],
+            "cdp_nl": cdp['NL'],
             "entry_price_avg": entry_target_max,
             "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
             "k": k_val, "plot_data": plot_df
@@ -226,7 +225,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.83 雙軌進擊版")
+    st.caption("v1.84 無縮排渲染版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -289,37 +288,23 @@ if run_analysis:
 
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
-                    safe_entry = res['entry_zone'].replace('$', '&#36;')
-                    
                     # 雙軌進擊顯示邏輯
-                    # 1. 積極點 (PT)
                     aggressive_price = res['cdp_pt']
-                    
-                    # 2. 狙擊點 (NL)
                     sniper_price = res['cdp_nl']
                     
-                    tactical_card = textwrap.dedent(f"""
-                    <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
-                        <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;">
-                            <strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span>
-                        </div>
-                        
-                        <div style="margin-bottom: 2px;">
-                            <strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span>
-                        </div>
-                        <div style="margin-bottom: 2px;">
-                            <strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span>
-                        </div>
-                        
-                        <div style="margin-top: 4px; margin-bottom: 2px;">
-                            <strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span>
-                        </div>
-                        <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;">
-                            <strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span>
-                        </div>
-                    </div>
-                    """)
-                    st.markdown(tactical_card, unsafe_allow_html=True)
+                    # 關鍵修正：完全不使用 textwrap，直接使用單行字串拼接
+                    # 這是最醜的寫法，但是是 Streamlit 最安全的寫法
+                    
+                    html_content = f"""
+<div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
+<div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;"><strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span></div>
+<div style="margin-bottom: 2px;"><strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span></div>
+<div style="margin-bottom: 2px;"><strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span></div>
+<div style="margin-top: 4px; margin-bottom: 2px;"><strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span></div>
+<div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;"><strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span></div>
+</div>
+"""
+                    st.markdown(html_content, unsafe_allow_html=True)
 
                     chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
                         x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),

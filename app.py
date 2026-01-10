@@ -13,7 +13,7 @@ import math
 import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.80", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.81", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -54,7 +54,32 @@ def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop
     estimated_cost = max_sheets * 1000 * entry_price
     return max_sheets, estimated_cost, risk_amount
 
-# --- 4. 彈出視窗功能 ---
+# --- 4. 核心運算：加權 CDP (Weighted) ---
+def calculate_weighted_cdp(df):
+    """
+    計算加權型 CDP (重視收盤價)
+    PT = (H + L + 2C) / 4
+    """
+    try:
+        last = df.iloc[-1]
+        h = last['High']
+        l = last['Low']
+        c = last['Close']
+        
+        # 加權平均價 (Pivot Point)
+        pt = (h + l + 2 * c) / 4
+        
+        # CDP 四大關卡
+        ah = pt + (h - l)  # Alien High (追價)
+        nh = 2 * pt - l    # Near High (賣出/壓力)
+        nl = 2 * pt - h    # Near Low (買進/支撐)
+        al = pt - (h - l)  # Alien Low (超跌)
+        
+        return {"PT": pt, "AH": ah, "NH": nh, "NL": nl, "AL": al}
+    except:
+        return {"PT": 0, "AH": 0, "NH": 0, "NL": 0, "AL": 0}
+
+# --- 5. 彈出視窗功能 ---
 @st.dialog("📋 雙週期共振戰略手諭")
 def show_strategy_modal(score):
     st.caption(f"當前宏觀評分: {score} / 100")
@@ -86,7 +111,7 @@ def show_strategy_modal(score):
     if st.button("🫡 收到，關閉視窗"):
         st.rerun()
 
-# --- 5. 自動化偵蒐引擎 ---
+# --- 6. 自動化偵蒐引擎 ---
 def fetch_auto_macro(fred_key):
     results = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -138,7 +163,7 @@ def fetch_auto_macro(fred_key):
     
     return results
 
-# --- 6. 戰術分析邏輯 ---
+# --- 7. 戰術分析邏輯 (整合 CDP) ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
     try:
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
@@ -150,8 +175,20 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         prev_k, prev_d = stoch.iloc[-2]['STOCHk_9_3_3'], stoch.iloc[-2]['STOCHd_9_3_3']
         atr = df.ta.atr(length=14).iloc[-1]
         
-        entry_low = current_price - (atr * 0.5)
-        entry_high = current_price - (atr * 0.1)
+        # 計算加權 CDP
+        cdp = calculate_weighted_cdp(df)
+        
+        # 戰術融合：ATR 與 CDP
+        # 狙擊區間：參考 ATR 0.5倍超跌 與 CDP NL (低接點)
+        # 取兩者較低者作為區間下限，較高者為上限，形成一個複合防禦帶
+        atr_low = current_price - (atr * 0.5)
+        
+        # 判斷邏輯：如果 CDP NL 在 ATR 範圍內，則以 NL 為主 (因為那是結構點)
+        entry_target = cdp['NL'] if cdp['NL'] > 0 else atr_low
+        
+        # 顯示用的區間字串
+        entry_zone_str = f"${min(atr_low, entry_target):.1f} ~ ${max(atr_low, entry_target):.1f}"
+
         stop_loss = current_price - (atr * 2.0 * risk_adj)
         tp1 = current_price + (atr * 1.5 * risk_adj)
         tp2 = current_price + (atr * 3.5 * risk_adj)
@@ -185,16 +222,18 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
             "price": current_price, 
             "change": (current_price/df['Close'].iloc[-2]-1)*100,
             "signal": signal, "color": color, "msg": msg, 
-            "entry_zone": f"${entry_low:.1f} ~ ${entry_high:.1f}", 
-            "entry_price_avg": entry_high,
+            "entry_zone": entry_zone_str,
+            "cdp_nl": cdp['NL'], # 回傳 NL 供顯示
+            "entry_price_avg": entry_target,
             "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
             "k": k_val, "plot_data": plot_df
         }, None
     except Exception as e: return None, str(e)
 
-# --- 7. UI 渲染 ---
+# --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
+    st.caption("v1.81 加權CDP校準版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -257,9 +296,10 @@ if run_analysis:
 
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
-                    # 使用 textwrap 並將所有 $ 改為 &#36; 避免數學公式衝突
-                    # 這是解決「程式碼外洩」的關鍵
                     safe_entry = res['entry_zone'].replace('$', '&#36;')
+                    
+                    # 顯示 NL 值 (CDP 支撐參考)
+                    cdp_nl_display = f"&#36;{res['cdp_nl']:.2f}"
                     
                     tactical_card = textwrap.dedent(f"""
                     <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
@@ -268,6 +308,9 @@ if run_analysis:
                         </div>
                         <div style="margin-bottom: 2px;">
                             <strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90;">{safe_entry}</span>
+                        </div>
+                        <div style="margin-bottom: 2px; font-size: 11px; color: #888;">
+                            (CDP NL支撐參考: <span style="color:#aaa;">{cdp_nl_display}</span>)
                         </div>
                         <div style="margin-bottom: 2px;">
                             <strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span>

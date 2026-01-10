@@ -12,7 +12,7 @@ import altair as alt
 import math
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.86", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.87", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -53,36 +53,41 @@ def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop
     estimated_cost = max_sheets * 1000 * entry_price
     return max_sheets, estimated_cost, risk_amount
 
-# --- 4. 彈出視窗功能 ---
-@st.dialog("📋 雙週期共振戰略手諭")
+# --- 4. 彈出視窗功能 (整合風險對照表) ---
+@st.dialog("📋 雙週期共振戰略指南")
 def show_strategy_modal(score):
-    st.caption(f"當前宏觀評分: {score} / 100")
+    st.markdown(f"### 當前宏觀評分: **{score} / 100**")
+    
+    # 動態建議
     if score >= 80:
-        st.success("🌟 結論：極度利多 (Aggressive)")
-        st.markdown("""
-        * **資金水位**：`80% - 100%`
-        * **策略**：順風滿帆，敢於追價，鎖定權值股。
-        """)
+        st.success("🌟 **當前狀態：極度利多 (Aggressive)**")
+        st.write("建議採取「擴大戰果」策略，積極尋找高 Beta 標的。")
     elif score >= 60:
-        st.info("✅ 結論：穩健多頭 (Standard)")
-        st.markdown("""
-        * **資金水位**：`50% - 70%`
-        * **策略**：買黑不買紅，嚴守雙週期訊號。
-        """)
+        st.info("✅ **當前狀態：穩健多頭 (Standard)**")
+        st.write("建議採取「標準配置」策略，嚴守買黑不買紅。")
     elif score >= 40:
-        st.warning("⚠️ 結論：震盪觀望 (Defensive)")
-        st.markdown("""
-        * **資金水位**：`30% 以下`
-        * **策略**：打帶跑，有獲利快跑。
-        """)
+        st.warning("⚠️ **當前狀態：震盪觀望 (Defensive)**")
+        st.write("建議採取「防禦駕駛」策略，減少曝險。")
     else:
-        st.error("🛑 結論：極端風險 (Cash is King)")
-        st.markdown("""
-        * **資金水位**：`0%` (空手)
-        * **策略**：覆巢之下無完卵，等待落底。
-        """)
+        st.error("🛑 **當前狀態：極端風險 (Cash is King)**")
+        st.write("建議「生存優先」，現金為王。")
+
     st.markdown("---")
-    if st.button("🫡 收到，關閉視窗"):
+    st.markdown("#### 📊 資金風控對照表")
+    
+    # Markdown 表格 (根據您的圖片內容)
+    table_md = """
+| 戰略總分 (Score) | 環境定義 | 建議風險 % | 戰術意義 |
+| :--- | :--- | :--- | :--- |
+| **80 ~ 100 分** | 順風滿帆 | **2.0% ~ 2.5%** | **【擴大戰果】** 市場趨勢強烈，容錯率高，敢於下重注。 |
+| **60 ~ 79 分** | 穩健多頭 | **1.5% ~ 2.0%** | **【標準配置】** 這是您的預設值。進可攻退可守。 |
+| **40 ~ 59 分** | 震盪整理 | **1.0%** | **【防禦駕駛】** 市場方向不明，減少曝險，保留子彈。 |
+| **< 40 分** | 極端風險 | **0.5% 或 空手** | **【生存優先】** 此時只做最有把握的狙擊，或者乾脆不打。 |
+    """
+    st.markdown(table_md)
+    
+    st.markdown("---")
+    if st.button("🫡 收到，關閉指南"):
         st.rerun()
 
 # --- 5. 自動化偵蒐引擎 ---
@@ -221,7 +226,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
             "entry_zone": entry_zone_str,
             "cdp_pt": cdp['PT'],
             "cdp_nl": cdp['NL'],
-            "cdp_nh": cdp['NH'], # 新增：傳回 NH (突破價)
+            "cdp_nh": cdp['NH'],
             "entry_price_avg": entry_target_max,
             "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
             "k": k_val, "plot_data": plot_df
@@ -231,7 +236,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.86 全戰譜監控版")
+    st.caption("v1.87 自定義戰略版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -244,6 +249,7 @@ with st.sidebar:
         risk_pct = st.slider("風險容忍 (%)", 1.0, 5.0, 2.0)
         st.caption(f"最大虧損限制: **${int(total_capital * risk_pct / 100):,}**")
 
+    # 宏觀數據計算
     auto = st.session_state.get('auto_m', {})
     m1 = auto.get('twd_strong', True); m2 = auto.get('sox_up', True)
     m3 = auto.get('light_pos', True); m4 = auto.get('foreign_net', 0) > 0
@@ -257,49 +263,55 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader(f"戰略總分: {score}")
-    if st.button("📜 閱讀戰略手諭", use_container_width=True):
+    
+    # 修改後的按鈕名稱與彈出視窗
+    if st.button("📜 閱讀戰略指南", use_container_width=True):
         show_strategy_modal(score)
 
     risk_factor = 0.8 if score < 50 else 1.0
-    targets_input = st.text_input("狙擊目標 (輸入代號)", value="2330, 2317, 3231, NVDA")
+    
+    # 修改後的輸入框 (清空預設值)
+    targets_input = st.text_input("狙擊目標 (輸入代號)", value="", placeholder="例如: 2330, 2317, 2449")
+    
     run_analysis = st.button("🚀 執行波段分析", type="primary")
 
 # --- 主畫面 ---
 st.header("📊 AI 雙週期共振決策系統")
 
 if run_analysis:
-    st.toast("🚀 正在掃描目標...", icon="🔍")
-    raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
-    cols = st.columns(len(raw_tickers))
-    
-    for i, raw_t in enumerate(raw_tickers):
-        with cols[i]:
-            final_ticker, df = smart_get_data(raw_t)
-            
-            if df.empty:
-                st.error(f"{raw_t}: 無法獲取數據")
-            else:
-                stock_name = get_stock_name(final_ticker)
-                current_price = df['Close'].iloc[-1]
-                res, err = get_tactical_analysis(df, current_price, score, risk_factor)
+    if not targets_input:
+        st.info("請在左側輸入股票代號以開始分析。")
+    else:
+        st.toast("🚀 正在掃描目標...", icon="🔍")
+        raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
+        cols = st.columns(len(raw_tickers))
+        
+        for i, raw_t in enumerate(raw_tickers):
+            with cols[i]:
+                final_ticker, df = smart_get_data(raw_t)
                 
-                if err: st.error(err)
+                if df.empty:
+                    st.error(f"{raw_t}: 無法獲取數據")
                 else:
-                    st.markdown(f"### {stock_name}")
-                    st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
+                    stock_name = get_stock_name(final_ticker)
+                    current_price = df['Close'].iloc[-1]
+                    res, err = get_tactical_analysis(df, current_price, score, risk_factor)
                     
-                    st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin-bottom: 5px;'>{res['signal']}</p>", unsafe_allow_html=True)
-                    st.caption(f"{res['msg']}")
+                    if err: st.error(err)
+                    else:
+                        st.markdown(f"### {stock_name}")
+                        st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
+                        
+                        st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin-bottom: 5px;'>{res['signal']}</p>", unsafe_allow_html=True)
+                        st.caption(f"{res['msg']}")
 
-                    sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
-                    
-                    # 數據準備
-                    breakout_price = res['cdp_nh']
-                    aggressive_price = res['cdp_pt']
-                    sniper_price = res['cdp_nl']
-                    
-                    # 確保沒有縮排
-                    html_content = f"""
+                        sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
+                        
+                        breakout_price = res['cdp_nh']
+                        aggressive_price = res['cdp_pt']
+                        sniper_price = res['cdp_nl']
+                        
+                        html_content = f"""
 <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
 <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;"><strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span></div>
 <div style="margin-bottom: 2px;"><strong style="color: #ddd;">⚡ 突破:</strong> <span style="color:#FF4500; font-weight:bold;">&#36;{breakout_price:.2f}</span> <span style="color:#888; font-size:11px;">(NH)</span></div>
@@ -309,11 +321,11 @@ if run_analysis:
 <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;"><strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span></div>
 </div>
 """
-                    st.markdown(html_content, unsafe_allow_html=True)
+                        st.markdown(html_content, unsafe_allow_html=True)
 
-                    chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
-                        x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
-                        y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),
-                        tooltip=['Date', 'Price']
-                    ).properties(height=180)
-                    st.altair_chart(chart, use_container_width=True)
+                        chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
+                            x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
+                            y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),
+                            tooltip=['Date', 'Price']
+                        ).properties(height=180)
+                        st.altair_chart(chart, use_container_width=True)

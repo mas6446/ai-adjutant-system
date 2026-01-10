@@ -13,7 +13,7 @@ import math
 import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.81", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.82", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -56,25 +56,16 @@ def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop
 
 # --- 4. 核心運算：加權 CDP (Weighted) ---
 def calculate_weighted_cdp(df):
-    """
-    計算加權型 CDP (重視收盤價)
-    PT = (H + L + 2C) / 4
-    """
     try:
         last = df.iloc[-1]
         h = last['High']
         l = last['Low']
         c = last['Close']
-        
-        # 加權平均價 (Pivot Point)
         pt = (h + l + 2 * c) / 4
-        
-        # CDP 四大關卡
-        ah = pt + (h - l)  # Alien High (追價)
-        nh = 2 * pt - l    # Near High (賣出/壓力)
-        nl = 2 * pt - h    # Near Low (買進/支撐)
-        al = pt - (h - l)  # Alien Low (超跌)
-        
+        ah = pt + (h - l)
+        nh = 2 * pt - l
+        nl = 2 * pt - h
+        al = pt - (h - l)
         return {"PT": pt, "AH": ah, "NH": nh, "NL": nl, "AL": al}
     except:
         return {"PT": 0, "AH": 0, "NH": 0, "NL": 0, "AL": 0}
@@ -163,7 +154,7 @@ def fetch_auto_macro(fred_key):
     
     return results
 
-# --- 7. 戰術分析邏輯 (整合 CDP) ---
+# --- 7. 戰術分析邏輯 (新增 AMBUSH 信號) ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
     try:
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
@@ -175,37 +166,41 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         prev_k, prev_d = stoch.iloc[-2]['STOCHk_9_3_3'], stoch.iloc[-2]['STOCHd_9_3_3']
         atr = df.ta.atr(length=14).iloc[-1]
         
-        # 計算加權 CDP
         cdp = calculate_weighted_cdp(df)
-        
-        # 戰術融合：ATR 與 CDP
-        # 狙擊區間：參考 ATR 0.5倍超跌 與 CDP NL (低接點)
-        # 取兩者較低者作為區間下限，較高者為上限，形成一個複合防禦帶
         atr_low = current_price - (atr * 0.5)
+        atr_high_band = current_price - (atr * 0.1)
         
-        # 判斷邏輯：如果 CDP NL 在 ATR 範圍內，則以 NL 為主 (因為那是結構點)
-        entry_target = cdp['NL'] if cdp['NL'] > 0 else atr_low
+        entry_target_min = min(atr_low, cdp['NL']) if cdp['NL'] > 0 else atr_low
+        entry_target_max = max(atr_low, cdp['NL']) if cdp['NL'] > 0 else atr_high_band
         
-        # 顯示用的區間字串
-        entry_zone_str = f"${min(atr_low, entry_target):.1f} ~ ${max(atr_low, entry_target):.1f}"
+        # 顯示用的區間 (保留小數點後一位)
+        entry_zone_str = f"${entry_target_min:.1f} ~ ${entry_target_max:.1f}"
 
         stop_loss = current_price - (atr * 2.0 * risk_adj)
         tp1 = current_price + (atr * 1.5 * risk_adj)
         tp2 = current_price + (atr * 3.5 * risk_adj)
         golden_cross = (prev_k < prev_d) and (k_val > d_val)
 
+        # 判斷是否「身在狙擊區中」
+        in_sniper_zone = (current_price <= entry_target_max * 1.005) # 給予 0.5% 誤差寬容
+
         if macro_score < 40: 
             signal = "STAY AWAY | 禁止進場"
             color = "#FF4B4B"
-            msg = "宏觀風險極高，建議空手。"
+            msg = "宏觀風險極高，現金為王。"
         elif weekly_hist > 0 and k_val < 30 and golden_cross: 
             signal = "FIRE | 全力進攻 (狙擊)"
-            color = "#09AB3B"
-            msg = "雙週期共振確認，建議佈局。"
+            color = "#09AB3B" # Green
+            msg = "雙週期共振確認，動能轉強。"
+        elif weekly_hist > 0 and in_sniper_zone: 
+            # 新增 AMBUSH 邏輯：週線多頭 + 價格已跌入狙擊區 = 埋伏
+            signal = "AMBUSH | 埋伏接單"
+            color = "#00CED1" # DarkTurquoise
+            msg = "價格已入狙擊區，執行左側掛單。"
         elif weekly_hist > 0 and k_val < 35: 
             signal = "PREPARE | 準備射擊"
-            color = "#FFA500"
-            msg = "價格進入甜蜜區，等待金叉。"
+            color = "#FFA500" # Orange
+            msg = "價格進入甜蜜區，等待訊號。"
         elif k_val > 80: 
             signal = "TAKE PROFIT | 分批止盈"
             color = "#1E90FF"
@@ -223,8 +218,8 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
             "change": (current_price/df['Close'].iloc[-2]-1)*100,
             "signal": signal, "color": color, "msg": msg, 
             "entry_zone": entry_zone_str,
-            "cdp_nl": cdp['NL'], # 回傳 NL 供顯示
-            "entry_price_avg": entry_target,
+            "cdp_nl": cdp['NL'],
+            "entry_price_avg": entry_target_max,
             "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
             "k": k_val, "plot_data": plot_df
         }, None
@@ -233,7 +228,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.81 加權CDP校準版")
+    st.caption("v1.82 埋伏狙擊版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -246,7 +241,6 @@ with st.sidebar:
         risk_pct = st.slider("風險容忍 (%)", 1.0, 5.0, 2.0)
         st.caption(f"最大虧損限制: **${int(total_capital * risk_pct / 100):,}**")
 
-    # 宏觀數據計算
     auto = st.session_state.get('auto_m', {})
     m1 = auto.get('twd_strong', True); m2 = auto.get('sox_up', True)
     m3 = auto.get('light_pos', True); m4 = auto.get('foreign_net', 0) > 0
@@ -297,8 +291,6 @@ if run_analysis:
                     sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                     
                     safe_entry = res['entry_zone'].replace('$', '&#36;')
-                    
-                    # 顯示 NL 值 (CDP 支撐參考)
                     cdp_nl_display = f"&#36;{res['cdp_nl']:.2f}"
                     
                     tactical_card = textwrap.dedent(f"""

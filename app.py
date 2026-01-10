@@ -199,4 +199,89 @@ with st.sidebar:
     
     if st.button("🔄 刷新全自動情報"):
         with st.spinner('同步全球數據中...'):
-            st.session_state['auto_m'] = fetch_
+            st.session_state['auto_m'] = fetch_auto_macro(fred_key)
+            st.toast("✅ 數據同步完成！")
+    
+    with st.expander("💰 資金指揮部", expanded=True):
+        total_capital = st.number_input("戰備資金 (TWD)", value=1000000, step=100000)
+        risk_pct = st.slider("風險容忍 (%)", 1.0, 5.0, 2.0)
+        st.caption(f"最大虧損限制: **${int(total_capital * risk_pct / 100):,}**")
+
+    # 宏觀數據計算
+    auto = st.session_state.get('auto_m', {})
+    m1 = auto.get('twd_strong', True); m2 = auto.get('sox_up', True)
+    m3 = auto.get('light_pos', True); m4 = auto.get('foreign_net', 0) > 0
+    m5 = auto.get('sp500_bull', True); m6 = auto.get('cpi_ok', True); m7 = auto.get('rate_low', True)
+    val_yield = auto.get('yield_val', 4.0); m8 = val_yield < 4.5
+    val_dxy = auto.get('dxy_val', 104.0); m9 = val_dxy < 105.0
+    val_vix = auto.get('vix_val', 15.0); m10 = val_vix < 20.0
+    m11 = True; m12 = True 
+
+    score = int((sum([m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12]) / 12) * 100)
+    
+    st.markdown("---")
+    st.subheader(f"戰略總分: {score}")
+    if st.button("📜 閱讀戰略手諭", use_container_width=True):
+        show_strategy_modal(score)
+
+    risk_factor = 0.8 if score < 50 else 1.0
+    targets_input = st.text_input("狙擊目標 (輸入代號)", value="2330, 2317, 3231, NVDA")
+    run_analysis = st.button("🚀 執行波段分析", type="primary")
+
+# --- 主畫面 ---
+st.header("📊 AI 雙週期共振決策系統")
+
+if run_analysis:
+    st.toast("🚀 正在掃描目標...", icon="🔍")
+    raw_tickers = [t.strip() for t in targets_input.split(",") if t.strip()]
+    cols = st.columns(len(raw_tickers))
+    
+    for i, raw_t in enumerate(raw_tickers):
+        with cols[i]:
+            final_ticker, df = smart_get_data(raw_t)
+            
+            if df.empty:
+                st.error(f"{raw_t}: 無法獲取數據")
+            else:
+                stock_name = get_stock_name(final_ticker)
+                current_price = df['Close'].iloc[-1]
+                res, err = get_tactical_analysis(df, current_price, score, risk_factor)
+                
+                if err: st.error(err)
+                else:
+                    st.markdown(f"### {stock_name}")
+                    st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
+                    
+                    st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin-bottom: 5px;'>{res['signal']}</p>", unsafe_allow_html=True)
+                    st.caption(f"{res['msg']}")
+
+                    sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
+                    
+                    # 使用 textwrap 並將所有 $ 改為 &#36; 避免數學公式衝突
+                    # 這是解決「程式碼外洩」的關鍵
+                    safe_entry = res['entry_zone'].replace('$', '&#36;')
+                    
+                    tactical_card = textwrap.dedent(f"""
+                    <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
+                        <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;">
+                            <strong style="color: #ddd;">💰 建議:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span>
+                        </div>
+                        <div style="margin-bottom: 2px;">
+                            <strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90;">{safe_entry}</span>
+                        </div>
+                        <div style="margin-bottom: 2px;">
+                            <strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span>
+                        </div>
+                        <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;">
+                            <strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> <span style="color:#888; font-size:11px;">(半)</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span> <span style="color:#888; font-size:11px;">(全)</span>
+                        </div>
+                    </div>
+                    """)
+                    st.markdown(tactical_card, unsafe_allow_html=True)
+
+                    chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(
+                        x=alt.X('Date', axis=alt.Axis(format='%m/%d', title=None)),
+                        y=alt.Y('Price', scale=alt.Scale(zero=False), axis=alt.Axis(title=None)),
+                        tooltip=['Date', 'Price']
+                    ).properties(height=180)
+                    st.altair_chart(chart, use_container_width=True)

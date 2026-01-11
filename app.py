@@ -10,9 +10,10 @@ import time
 import re
 import altair as alt
 import math
+import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.87", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.89", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -43,22 +44,35 @@ def smart_get_data(ticker_input):
     if not df.empty: return try_two, df
     return ticker_input, pd.DataFrame()
 
-# --- 3. 資金控管邏輯 ---
+# --- 3. 資金控管邏輯 (v1.89 修正：加入現金上限鎖) ---
 def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop_loss):
     if entry_price <= stop_loss: return 0, 0, 0
+    
+    # 1. 風險模型計算 (Risk Based)
     risk_amount = total_capital * (risk_per_trade_pct / 100.0)
     risk_per_share = entry_price - stop_loss
-    max_shares = risk_amount / risk_per_share
-    max_sheets = math.floor(max_shares / 1000)
+    shares_by_risk = risk_amount / risk_per_share
+    
+    # 2. 現金模型計算 (Cash Based)
+    # 確保建議金額不超過總戰備資金的 100% (不開槓桿)
+    shares_by_cash = total_capital / entry_price
+    
+    # 3. 取兩者較小值 (安全閥)
+    final_shares = min(shares_by_risk, shares_by_cash)
+    
+    max_sheets = math.floor(final_shares / 1000)
     estimated_cost = max_sheets * 1000 * entry_price
-    return max_sheets, estimated_cost, risk_amount
+    
+    # 若張數被現金限制，實際風險會低於預設風險
+    actual_risk = max_sheets * 1000 * risk_per_share
+    
+    return max_sheets, estimated_cost, actual_risk
 
-# --- 4. 彈出視窗功能 (整合風險對照表) ---
+# --- 4. 彈出視窗功能 ---
 @st.dialog("📋 雙週期共振戰略指南")
 def show_strategy_modal(score):
     st.markdown(f"### 當前宏觀評分: **{score} / 100**")
     
-    # 動態建議
     if score >= 80:
         st.success("🌟 **當前狀態：極度利多 (Aggressive)**")
         st.write("建議採取「擴大戰果」策略，積極尋找高 Beta 標的。")
@@ -75,15 +89,14 @@ def show_strategy_modal(score):
     st.markdown("---")
     st.markdown("#### 📊 資金風控對照表")
     
-    # Markdown 表格 (根據您的圖片內容)
-    table_md = """
-| 戰略總分 (Score) | 環境定義 | 建議風險 % | 戰術意義 |
-| :--- | :--- | :--- | :--- |
-| **80 ~ 100 分** | 順風滿帆 | **2.0% ~ 2.5%** | **【擴大戰果】** 市場趨勢強烈，容錯率高，敢於下重注。 |
-| **60 ~ 79 分** | 穩健多頭 | **1.5% ~ 2.0%** | **【標準配置】** 這是您的預設值。進可攻退可守。 |
-| **40 ~ 59 分** | 震盪整理 | **1.0%** | **【防禦駕駛】** 市場方向不明，減少曝險，保留子彈。 |
-| **< 40 分** | 極端風險 | **0.5% 或 空手** | **【生存優先】** 此時只做最有把握的狙擊，或者乾脆不打。 |
-    """
+    table_md = textwrap.dedent("""
+    | 戰略總分 (Score) | 環境定義 | 建議風險 % | 戰術意義 |
+    | :--- | :--- | :--- | :--- |
+    | **80 ~ 100 分** | 順風滿帆 | **2.0% ~ 2.5%** | **【擴大戰果】** 市場趨勢強烈，容錯率高，敢於下重注。 |
+    | **60 ~ 79 分** | 穩健多頭 | **1.5% ~ 2.0%** | **【標準配置】** 這是您的預設值。進可攻退可守。 |
+    | **40 ~ 59 分** | 震盪整理 | **1.0%** | **【防禦駕駛】** 市場方向不明，減少曝險，保留子彈。 |
+    | **< 40 分** | 極端風險 | **0.5% 或 空手** | **【生存優先】** 此時只做最有把握的狙擊，或者乾脆不打。 |
+    """)
     st.markdown(table_md)
     
     st.markdown("---")
@@ -170,16 +183,12 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         prev_k, prev_d = stoch.iloc[-2]['STOCHk_9_3_3'], stoch.iloc[-2]['STOCHd_9_3_3']
         atr = df.ta.atr(length=14).iloc[-1]
         
-        # 1. 計算 CDP
         cdp = calculate_weighted_cdp(df)
-        
-        # 2. 計算 狙擊區間
         atr_low = current_price - (atr * 0.5)
         entry_target_min = min(atr_low, cdp['NL']) if cdp['NL'] > 0 else atr_low
         entry_target_max = max(atr_low, cdp['NL']) if cdp['NL'] > 0 else current_price
         entry_zone_str = f"${entry_target_min:.1f} ~ ${entry_target_max:.1f}"
 
-        # 3. 計算 停損 (結構優先)
         stop_atr = current_price - (atr * 2.0 * risk_adj)
         last_low = df.iloc[-1]['Low']
         stop_structure = last_low * 0.995 
@@ -236,7 +245,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.87 自定義戰略版")
+    st.caption("v1.89 現金安全閥版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -264,13 +273,11 @@ with st.sidebar:
     st.markdown("---")
     st.subheader(f"戰略總分: {score}")
     
-    # 修改後的按鈕名稱與彈出視窗
     if st.button("📜 閱讀戰略指南", use_container_width=True):
         show_strategy_modal(score)
 
     risk_factor = 0.8 if score < 50 else 1.0
     
-    # 修改後的輸入框 (清空預設值)
     targets_input = st.text_input("狙擊目標 (輸入代號)", value="", placeholder="例如: 2330, 2317, 2449")
     
     run_analysis = st.button("🚀 執行波段分析", type="primary")
@@ -311,16 +318,16 @@ if run_analysis:
                         aggressive_price = res['cdp_pt']
                         sniper_price = res['cdp_nl']
                         
-                        html_content = f"""
-<div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
-<div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;"><strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span></div>
-<div style="margin-bottom: 2px;"><strong style="color: #ddd;">⚡ 突破:</strong> <span style="color:#FF4500; font-weight:bold;">&#36;{breakout_price:.2f}</span> <span style="color:#888; font-size:11px;">(NH)</span></div>
-<div style="margin-bottom: 2px;"><strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span></div>
-<div style="margin-bottom: 2px;"><strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span></div>
-<div style="margin-top: 4px; margin-bottom: 2px;"><strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span></div>
-<div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;"><strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span></div>
-</div>
-"""
+                        html_content = textwrap.dedent(f"""
+                        <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
+                            <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;"><strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span></div>
+                            <div style="margin-bottom: 2px;"><strong style="color: #ddd;">⚡ 突破:</strong> <span style="color:#FF4500; font-weight:bold;">&#36;{breakout_price:.2f}</span> <span style="color:#888; font-size:11px;">(NH)</span></div>
+                            <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span></div>
+                            <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span></div>
+                            <div style="margin-top: 4px; margin-bottom: 2px;"><strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span></div>
+                            <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;"><strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span></div>
+                        </div>
+                        """)
                         st.markdown(html_content, unsafe_allow_html=True)
 
                         chart = alt.Chart(res['plot_data'].tail(60)).mark_line(color='#00AAFF').encode(

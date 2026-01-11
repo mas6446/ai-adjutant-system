@@ -13,7 +13,7 @@ import math
 import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.89", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.90", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -44,29 +44,35 @@ def smart_get_data(ticker_input):
     if not df.empty: return try_two, df
     return ticker_input, pd.DataFrame()
 
-# --- 3. 資金控管邏輯 (v1.89 修正：加入現金上限鎖) ---
+# --- 3. 資金控管邏輯 (v1.90 修正：支援零股) ---
 def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop_loss):
-    if entry_price <= stop_loss: return 0, 0, 0
+    if entry_price <= stop_loss: return 0, "0 張", 0
     
-    # 1. 風險模型計算 (Risk Based)
+    # 1. 風險模型計算
     risk_amount = total_capital * (risk_per_trade_pct / 100.0)
     risk_per_share = entry_price - stop_loss
     shares_by_risk = risk_amount / risk_per_share
     
-    # 2. 現金模型計算 (Cash Based)
-    # 確保建議金額不超過總戰備資金的 100% (不開槓桿)
+    # 2. 現金模型計算
     shares_by_cash = total_capital / entry_price
     
-    # 3. 取兩者較小值 (安全閥)
-    final_shares = min(shares_by_risk, shares_by_cash)
+    # 3. 取小值 (實際可買股數)
+    final_shares = int(min(shares_by_risk, shares_by_cash))
     
-    max_sheets = math.floor(final_shares / 1000)
-    estimated_cost = max_sheets * 1000 * entry_price
+    # 4. 顯示邏輯 (整張 vs 零股)
+    if final_shares >= 1000:
+        sheets = math.floor(final_shares / 1000)
+        display_str = f"{sheets} 張"
+        # 計算成本以「整張」為準
+        estimated_cost = sheets * 1000 * entry_price
+    else:
+        # 不足一張，顯示零股
+        display_str = f"{final_shares} 股"
+        estimated_cost = final_shares * entry_price
+        
+    actual_risk = (final_shares if final_shares < 1000 else sheets * 1000) * risk_per_share
     
-    # 若張數被現金限制，實際風險會低於預設風險
-    actual_risk = max_sheets * 1000 * risk_per_share
-    
-    return max_sheets, estimated_cost, actual_risk
+    return final_shares, display_str, estimated_cost
 
 # --- 4. 彈出視窗功能 ---
 @st.dialog("📋 雙週期共振戰略指南")
@@ -245,7 +251,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.89 現金安全閥版")
+    st.caption("v1.90 零股狙擊支援版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -312,7 +318,8 @@ if run_analysis:
                         st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin-bottom: 5px;'>{res['signal']}</p>", unsafe_allow_html=True)
                         st.caption(f"{res['msg']}")
 
-                        sheets, cost, risk_amt = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
+                        # 呼叫新的資金控管函數 (回傳股數、顯示字串、成本)
+                        raw_shares, display_str, cost = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                         
                         breakout_price = res['cdp_nh']
                         aggressive_price = res['cdp_pt']
@@ -320,7 +327,7 @@ if run_analysis:
                         
                         html_content = textwrap.dedent(f"""
                         <div style="background-color: #262730; padding: 10px; border-radius: 5px; font-size: 13px; line-height: 1.4; border: 1px solid #444; margin-bottom: 10px;">
-                            <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;"><strong style="color: #ddd;">💰 資金:</strong> {sheets} 張 <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span></div>
+                            <div style="margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #444;"><strong style="color: #ddd;">💰 資金:</strong> {display_str} <span style="color:#aaa; font-size:11px;">(&#36;{int(cost/1000)}k)</span></div>
                             <div style="margin-bottom: 2px;"><strong style="color: #ddd;">⚡ 突破:</strong> <span style="color:#FF4500; font-weight:bold;">&#36;{breakout_price:.2f}</span> <span style="color:#888; font-size:11px;">(NH)</span></div>
                             <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span></div>
                             <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span></div>

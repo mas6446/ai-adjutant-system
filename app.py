@@ -13,7 +13,7 @@ import math
 import textwrap
 
 # --- 1. 系統初始化 ---
-st.set_page_config(page_title="AI 雙週期共振決策系統 v1.91", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="AI 雙週期共振決策系統 v1.92", layout="wide", page_icon="🛡️")
 
 # --- 2. 輔助功能 ---
 @st.cache_data(ttl=86400)
@@ -44,11 +44,11 @@ def smart_get_data(ticker_input):
     if not df.empty: return try_two, df
     return ticker_input, pd.DataFrame()
 
-# --- 3. 資金控管邏輯 (v1.91 修正：600元門檻) ---
+# --- 3. 資金控管邏輯 (v1.91 繼承：600元門檻) ---
 def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop_loss):
     if entry_price <= stop_loss: return 0, "0 張", 0
     
-    # 1. 基礎運算：最多能買幾股 (Raw Shares)
+    # 1. 基礎運算
     risk_amount = total_capital * (risk_per_trade_pct / 100.0)
     risk_per_share = entry_price - stop_loss
     shares_by_risk = risk_amount / risk_per_share
@@ -60,16 +60,12 @@ def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop
     ODD_LOT_THRESHOLD = 600.0
     
     if entry_price < ODD_LOT_THRESHOLD:
-        # --- 低於 600 元：只買整張 (Standard Lots Only) ---
         sheets = math.floor(raw_shares / 1000)
         final_shares = sheets * 1000
         display_str = f"{sheets} 張"
         estimated_cost = final_shares * entry_price
-        
     else:
-        # --- 高於 600 元：允許零股 (Odd Lots Allowed) ---
         final_shares = raw_shares
-        # 顯示優化：如果剛好是整張，顯示張數，否則顯示股數
         if final_shares >= 1000 and final_shares % 1000 == 0:
              display_str = f"{int(final_shares/1000)} 張"
         else:
@@ -79,7 +75,7 @@ def calculate_position_size(total_capital, risk_per_trade_pct, entry_price, stop
     return final_shares, display_str, estimated_cost
 
 # --- 4. 彈出視窗功能 ---
-@st.dialog("📋 雙週期共振戰略指南")
+@st.dialog("📋 雙週期共振戰略指南 v1.75")
 def show_strategy_modal(score):
     st.markdown(f"### 當前宏觀評分: **{score} / 100**")
     
@@ -97,19 +93,11 @@ def show_strategy_modal(score):
         st.write("建議「生存優先」，現金為王。")
 
     st.markdown("---")
-    st.markdown("#### 📊 資金風控對照表")
-    
-    table_md = textwrap.dedent("""
-    | 戰略總分 (Score) | 環境定義 | 建議風險 % | 戰術意義 |
-    | :--- | :--- | :--- | :--- |
-    | **80 ~ 100 分** | 順風滿帆 | **2.0% ~ 2.5%** | **【擴大戰果】** 市場趨勢強烈，容錯率高，敢於下重注。 |
-    | **60 ~ 79 分** | 穩健多頭 | **1.5% ~ 2.0%** | **【標準配置】** 這是您的預設值。進可攻退可守。 |
-    | **40 ~ 59 分** | 震盪整理 | **1.0%** | **【防禦駕駛】** 市場方向不明，減少曝險，保留子彈。 |
-    | **< 40 分** | 極端風險 | **0.5% 或 空手** | **【生存優先】** 此時只做最有把握的狙擊，或者乾脆不打。 |
+    st.markdown("#### ⚔️ v1.75 戰術分類 (矛與盾)")
+    st.info("""
+    * **🗡️ 戰術矛 (Spear)**：高波動 (>2.5%) 或創高股。**停損嚴守 -3% 或 開盤低點**。
+    * **🛡️ 防禦盾 (Shield)**：低波動穩健股。**停損採用 MA20 - 1.5 ATR** (結構性防守)。
     """)
-    st.markdown(table_md)
-    st.caption("💡 **零股策略**：股價 < $600 者僅建議整張買進；股價 ≥ $600 者開啟零股精確配置。")
-    
     st.markdown("---")
     if st.button("🫡 收到，關閉指南"):
         st.rerun()
@@ -182,9 +170,10 @@ def calculate_weighted_cdp(df):
     except:
         return {"PT": 0, "AH": 0, "NH": 0, "NL": 0, "AL": 0}
 
-# --- 7. 戰術分析邏輯 ---
+# --- 7. 戰術分析邏輯 (v1.92 核心升級：v1.75 矛與盾) ---
 def get_tactical_analysis(df, current_price, macro_score, risk_adj):
     try:
+        # 技術指標計算
         df_w = df.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last'})
         macd_w = df_w.ta.macd(fast=12, slow=26, signal=9)
         weekly_hist = macd_w.iloc[-1]['MACDh_12_26_9']
@@ -192,25 +181,62 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
         k_val = stoch.iloc[-1]['STOCHk_9_3_3']
         d_val = stoch.iloc[-1]['STOCHd_9_3_3']
         prev_k, prev_d = stoch.iloc[-2]['STOCHk_9_3_3'], stoch.iloc[-2]['STOCHd_9_3_3']
-        atr = df.ta.atr(length=14).iloc[-1]
         
+        # ATR 與 MA20
+        atr = df.ta.atr(length=14).iloc[-1]
+        ma20 = df['Close'].rolling(20).mean().iloc[-1]
+        
+        # v1.75 新增：角色判定 (Spear vs Shield)
+        # 判定標準：ATR佔比 > 2.5% 或 創20日新高 -> 矛
+        atr_pct = (atr / current_price) * 100
+        recent_high = df['High'].rolling(20).max().iloc[-1]
+        is_breakout = current_price >= recent_high * 0.99
+        
+        if atr_pct > 2.5 or is_breakout:
+            role = "🗡️ 戰術矛 (Spear)"
+            role_type = "spear"
+            role_color = "#FF4500" # OrangeRed
+        else:
+            role = "🛡️ 防禦盾 (Shield)"
+            role_type = "shield"
+            role_color = "#1E90FF" # DodgerBlue
+
+        # v1.75 新增：跳空判定 (Gap Check)
+        prev_close = df['Close'].iloc[-2]
+        today_open = df['Open'].iloc[-1]
+        gap_pct = (today_open - prev_close) / prev_close
+        is_big_gap = gap_pct > 0.03 # 3% 跳空
+
+        # CDP 計算
         cdp = calculate_weighted_cdp(df)
         atr_low = current_price - (atr * 0.5)
+        
+        # 狙擊區間
         entry_target_min = min(atr_low, cdp['NL']) if cdp['NL'] > 0 else atr_low
         entry_target_max = max(atr_low, cdp['NL']) if cdp['NL'] > 0 else current_price
         entry_zone_str = f"${entry_target_min:.1f} ~ ${entry_target_max:.1f}"
 
-        stop_atr = current_price - (atr * 2.0 * risk_adj)
-        last_low = df.iloc[-1]['Low']
-        stop_structure = last_low * 0.995 
-        stop_loss = max(stop_atr, stop_structure)
+        # v1.75 核心：動態停損邏輯
+        if is_big_gap:
+            # 規則 5.3: 跳空 > 3%，守開盤低點 (這裡取 Open 作為近似)
+            stop_loss = today_open
+            stop_reason = "Gap"
+        elif role_type == "shield":
+            # 規則: 盾守 MA20 - 1.5 ATR (結構性止損)
+            stop_loss = ma20 - (atr * 1.5)
+            stop_reason = "MA20-ATR"
+        else:
+            # 規則: 矛守 -3% 硬停損 (或 NH 回測，這裡用 -3% 最保險)
+            stop_loss = current_price * 0.97
+            stop_reason = "Hard-3%"
 
+        # 停利計算
         tp1 = current_price + (atr * 1.5 * risk_adj)
         tp2 = current_price + (atr * 3.5 * risk_adj)
         golden_cross = (prev_k < prev_d) and (k_val > d_val)
-
         in_sniper_zone = (current_price <= entry_target_max * 1.005)
 
+        # 訊號判定
         if macro_score < 40: 
             signal = "STAY AWAY | 禁止進場"
             color = "#FF4B4B"
@@ -248,7 +274,9 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
             "cdp_nl": cdp['NL'],
             "cdp_nh": cdp['NH'],
             "entry_price_avg": entry_target_max,
-            "stop": stop_loss, "tp1": tp1, "tp2": tp2, "atr": atr, 
+            "stop": stop_loss, "stop_reason": stop_reason,
+            "tp1": tp1, "tp2": tp2, "atr": atr, 
+            "role": role, "role_color": role_color, # 回傳角色資訊
             "k": k_val, "plot_data": plot_df
         }, None
     except Exception as e: return None, str(e)
@@ -256,7 +284,7 @@ def get_tactical_analysis(df, current_price, macro_score, risk_adj):
 # --- 8. UI 渲染 ---
 with st.sidebar:
     st.title("🛡️ AI 雙週期共振決策系統")
-    st.caption("v1.91 高價股零股特化版")
+    st.caption("v1.92 矛與盾實戰版")
     fred_key = st.text_input("FRED API Key", type="password", value="f080910b1d9500925bceb6870cdf9b7c")
     
     if st.button("🔄 刷新全自動情報"):
@@ -320,17 +348,20 @@ if run_analysis:
                         st.markdown(f"### {stock_name}")
                         st.metric("現價", f"${res['price']:.2f}", f"{res['change']:.2f}%", delta_color="inverse")
                         
-                        st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin-bottom: 5px;'>{res['signal']}</p>", unsafe_allow_html=True)
+                        # 顯示戰術角色 (v1.92)
+                        st.markdown(f"<span style='background-color:{res['role_color']}; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;'>{res['role']}</span>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"<p style='color: {res['color']}; font-weight: bold; font-size: 16px; margin: 10px 0;'>{res['signal']}</p>", unsafe_allow_html=True)
                         st.caption(f"{res['msg']}")
 
-                        # 呼叫新的資金控管函數 (回傳股數、顯示字串、成本)
                         raw_shares, display_str, cost = calculate_position_size(total_capital, risk_pct, res['entry_price_avg'], res['stop'])
                         
                         breakout_price = res['cdp_nh']
                         aggressive_price = res['cdp_pt']
                         sniper_price = res['cdp_nl']
+                        stop_reason = res['stop_reason'] # v1.92
                         
-                        # 顯示完整成本金額 (如果是整張則用 k，零股則顯示全額)
+                        # 顯示完整成本金額
                         if "張" in display_str:
                             cost_str = f"&#36;{int(cost/1000)}k"
                         else:
@@ -342,7 +373,7 @@ if run_analysis:
                             <div style="margin-bottom: 2px;"><strong style="color: #ddd;">⚡ 突破:</strong> <span style="color:#FF4500; font-weight:bold;">&#36;{breakout_price:.2f}</span> <span style="color:#888; font-size:11px;">(NH)</span></div>
                             <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🔫 積極:</strong> <span style="color:#FFD700; font-weight:bold;">&#36;{aggressive_price:.2f}</span> <span style="color:#888; font-size:11px;">(PT)</span></div>
                             <div style="margin-bottom: 2px;"><strong style="color: #ddd;">🎯 狙擊:</strong> <span style="color:#90ee90; font-weight:bold;">&#36;{sniper_price:.2f}</span> <span style="color:#888; font-size:11px;">(NL)</span></div>
-                            <div style="margin-top: 4px; margin-bottom: 2px;"><strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span></div>
+                            <div style="margin-top: 4px; margin-bottom: 2px;"><strong style="color: #ddd;">🛡️ 停損:</strong> <span style="color:#ff8a8a;">&#36;{res['stop']:.2f}</span> <span style="color:#666; font-size:10px;">({stop_reason})</span></div>
                             <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #555;"><strong style="color: #ddd;">💵 停利:</strong> <span style="color:#87cefa;">&#36;{res['tp1']:.2f}</span> ➜ <span style="color:#87cefa;">&#36;{res['tp2']:.2f}</span></div>
                         </div>
                         """)
